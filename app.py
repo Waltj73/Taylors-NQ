@@ -1,212 +1,561 @@
 # app.py
 
-"""
-Taylor NQ
-Main Application
-
-Production entry point.
-"""
-
 from __future__ import annotations
 
-import traceback
+import time
+from datetime import datetime
 
+import pandas as pd
 import streamlit as st
 
-from config import config, ensure_directories
-from engine import (
-    TaylorCalculator,
-    YahooData,
-    YahooQuote,
-    SignalEngine,
-    SessionManager,
-)
+from config import config
 
+from engine.service import TaylorService
+
+from engine.calculations import TaylorCalculator
+
+from engine.version import version
+
+from ui.footer import Footer
+from ui.help_panel import HelpPanel
+
+
+# ----------------------------------------------------------
+# Page Configuration
+# ----------------------------------------------------------
 
 st.set_page_config(
-    page_title=config.APP_NAME,
+    page_title="Taylor NQ",
+    page_icon="📈",
     layout="wide",
     initial_sidebar_state="expanded",
 )
 
-ensure_directories()
+# ----------------------------------------------------------
+# Session State
+# ----------------------------------------------------------
+
+if "service" not in st.session_state:
+
+    st.session_state.service = TaylorService()
+
+if "last_refresh" not in st.session_state:
+
+    st.session_state.last_refresh = None
+
+if "auto_refresh" not in st.session_state:
+
+    st.session_state.auto_refresh = True
+
+if "refresh_seconds" not in st.session_state:
+
+    st.session_state.refresh_seconds = 30
 
 
-@st.cache_data(ttl=config.REFRESH_SECONDS)
-def load_history():
-
-    data = YahooData(config.SYMBOL)
-
-    return data.latest(
-        bars=250,
-        interval=config.HISTORY_INTERVAL,
-    )
+service = st.session_state.service
 
 
-def main():
+# ----------------------------------------------------------
+# Sidebar
+# ----------------------------------------------------------
+
+with st.sidebar:
 
     st.title("Taylor NQ")
 
-    try:
+    st.caption(
+        f"Version {version.VERSION}"
+    )
 
-        history = load_history()
+    st.divider()
 
-        calculator = TaylorCalculator()
+    st.session_state.auto_refresh = st.checkbox(
+        "Auto Refresh",
+        value=st.session_state.auto_refresh,
+    )
 
-        calculated = calculator.calculate(history)
+    st.session_state.refresh_seconds = st.slider(
+        "Refresh Interval (Seconds)",
+        min_value=5,
+        max_value=300,
+        value=st.session_state.refresh_seconds,
+        step=5,
+    )
 
-        latest = calculator.latest(history)
+    st.divider()
 
-        signal = SignalEngine().evaluate(calculated)
+    if st.button(
+        "Refresh Now",
+        use_container_width=True,
+    ):
 
-        quote = YahooQuote(config.SYMBOL).quote()
+        st.session_state.last_refresh = None
 
-        session = SessionManager().info()
+        st.rerun()
 
-        #
-        # Header
-        #
+    st.divider()
 
-        c1, c2, c3, c4 = st.columns(4)
+    page = st.radio(
 
-        c1.metric(
+        "Navigation",
+
+        [
+
+            "Dashboard",
+
+            "Workbook",
+
+            "Trading Plan",
+
+            "Verification",
+
+            "Raw Data",
+
+            "Help",
+
+        ],
+
+    )
+
+# ----------------------------------------------------------
+# Auto Refresh
+# ----------------------------------------------------------
+
+refresh_required = False
+
+if st.session_state.last_refresh is None:
+
+    refresh_required = True
+
+else:
+
+    elapsed = (
+        datetime.now()
+        - st.session_state.last_refresh
+    ).total_seconds()
+
+    if (
+        st.session_state.auto_refresh
+        and elapsed
+        >= st.session_state.refresh_seconds
+    ):
+
+        refresh_required = True
+
+
+if refresh_required:
+
+    with st.spinner(
+        "Loading market data..."
+    ):
+
+        state = service.refresh()
+
+    st.session_state.state = state
+
+    st.session_state.last_refresh = datetime.now()
+
+else:
+
+    state = st.session_state.state
+
+
+# ----------------------------------------------------------
+# Header
+# ----------------------------------------------------------
+
+st.title("Taylor Trading Model")
+
+left, right = st.columns([3, 1])
+
+with left:
+
+    st.caption(
+        f"Symbol: {config.SYMBOL}"
+    )
+
+with right:
+
+    if st.session_state.last_refresh:
+
+        st.caption(
+            "Last Refresh: "
+            + st.session_state.last_refresh.strftime(
+                "%H:%M:%S"
+            )
+        )
+
+st.divider()
+
+# ----------------------------------------------------------
+# Dashboard
+# ----------------------------------------------------------
+
+if page == "Dashboard":
+
+    latest = state.calculations.iloc[-1]
+
+    metric1, metric2, metric3, metric4 = st.columns(4)
+
+    with metric1:
+
+        st.metric(
+
             "Current Price",
-            f"{quote.price:,.2f}",
+
+            f"{latest['Close']:,.2f}",
+
         )
 
-        c2.metric(
-            "Today's High",
-            f"{quote.high:,.2f}",
-        )
+    with metric2:
 
-        c3.metric(
-            "Today's Low",
-            f"{quote.low:,.2f}",
-        )
+        st.metric(
 
-        c4.metric(
-            "Previous Close",
-            f"{quote.previous_close:,.2f}",
-        )
-
-        st.divider()
-
-        #
-        # Session
-        #
-
-        s1, s2, s3 = st.columns(3)
-
-        s1.metric(
-            "Session",
-            session.session.value,
-        )
-
-        s2.metric(
-            "Trading Day",
-            str(session.trading_day),
-        )
-
-        s3.metric(
-            "Minutes Remaining",
-            session.minutes_until_close,
-        )
-
-        st.divider()
-
-        #
-        # Average Buy / Sell
-        #
-
-        a1, a2 = st.columns(2)
-
-        a1.metric(
             "Average Buy",
-            f"{latest.avg_buy:,.2f}"
-            if latest.avg_buy is not None
-            else "-",
+
+            f"{latest['AverageBuy']:,.2f}",
+
         )
 
-        a2.metric(
+    with metric3:
+
+        st.metric(
+
             "Average Sell",
-            f"{latest.avg_sell:,.2f}"
-            if latest.avg_sell is not None
-            else "-",
+
+            f"{latest['AverageSell']:,.2f}",
+
         )
 
-        #
-        # Pivot Levels
-        #
+    with metric4:
 
-        p1, p2 = st.columns(2)
+        st.metric(
 
-        p1.metric(
-            "Pivot Breakout High",
-            f"{latest.pivot_breakout_high:,.2f}"
-            if latest.pivot_breakout_high is not None
-            else "-",
+            "Range",
+
+            f"{latest['High']-latest['Low']:.2f}",
+
         )
 
-        p2.metric(
-            "Pivot Breakout Low",
-            f"{latest.pivot_breakout_low:,.2f}"
-            if latest.pivot_breakout_low is not None
-            else "-",
+    st.divider()
+
+    c1, c2 = st.columns(2)
+
+    with c1:
+
+        st.subheader("Taylor Levels")
+
+        levels = pd.DataFrame(
+
+            {
+
+                "Level": [
+
+                    "Average Buy",
+
+                    "Average Sell",
+
+                    "Breakout High",
+
+                    "Breakout Low",
+
+                    "Projected High (Low)",
+
+                    "Projected High (High)",
+
+                ],
+
+                "Price": [
+
+                    latest["AverageBuy"],
+
+                    latest["AverageSell"],
+
+                    latest["TomorrowBreakoutHigh"],
+
+                    latest["TomorrowBreakoutLow"],
+
+                    latest["TomorrowAnticipatedHighFromLow"],
+
+                    latest["TomorrowAnticipatedHighFromHigh"],
+
+                ],
+
+            }
+
         )
-
-        st.divider()
-
-        #
-        # Signal
-        #
-
-        st.subheader("Taylor Signal")
-
-        st.success(signal.day_type.value)
-
-        col1, col2 = st.columns(2)
-
-        col1.metric(
-            "Above Avg Buy",
-            "YES" if signal.above_avg_buy else "NO",
-        )
-
-        col2.metric(
-            "Below Avg Sell",
-            "YES" if signal.below_avg_sell else "NO",
-        )
-
-        st.divider()
-
-        st.subheader("Calculation Table")
-
-        display_columns = [
-            "Open",
-            "High",
-            "Low",
-            "Close",
-            "AvgBuy",
-            "AvgSell",
-            "PivotBreakoutHigh",
-            "PivotBreakoutLow",
-            "AnticipatedHighFromLow",
-            "AnticipatedHighFromHigh",
-            "YesterdayHighMinusAvg",
-            "YesterdayLowMinusAvg",
-        ]
 
         st.dataframe(
-            calculated[display_columns].tail(30),
+
+            levels,
+
             use_container_width=True,
-            height=650,
+
+            hide_index=True,
+
         )
 
-    except Exception:
+    with c2:
 
-        st.error("Application Error")
+        st.subheader("Price History")
 
-        st.code(traceback.format_exc())
+        chart = state.history[
+            [
 
+                "Close",
 
-if __name__ == "__main__":
-    main()
+            ]
+
+        ]
+
+        st.line_chart(chart)
+        # ----------------------------------------------------------
+# Trading Plan
+# ----------------------------------------------------------
+
+elif page == "Trading Plan":
+
+    st.subheader("Trading Plan")
+
+    latest = state.calculations.iloc[-1]
+
+    left, right = st.columns(2)
+
+    with left:
+
+        st.metric(
+            "Average Buy",
+            f"{latest['AverageBuy']:,.2f}",
+        )
+
+        st.metric(
+            "Breakout Low",
+            f"{latest['TomorrowBreakoutLow']:,.2f}",
+        )
+
+        st.metric(
+            "Projected High",
+            f"{latest['TomorrowAnticipatedHighFromHigh']:,.2f}",
+        )
+
+    with right:
+
+        st.metric(
+            "Average Sell",
+            f"{latest['AverageSell']:,.2f}",
+        )
+
+        st.metric(
+            "Breakout High",
+            f"{latest['TomorrowBreakoutHigh']:,.2f}",
+        )
+
+        st.metric(
+            "Projected From Low",
+            f"{latest['TomorrowAnticipatedHighFromLow']:,.2f}",
+        )
+
+    st.divider()
+
+    plan = pd.DataFrame(
+
+        {
+
+            "Description": [
+
+                "Average Buy",
+
+                "Average Sell",
+
+                "Breakout High",
+
+                "Breakout Low",
+
+                "Yesterday High Minus Avg",
+
+                "Yesterday Low Minus Avg",
+
+            ],
+
+            "Value": [
+
+                latest["AverageBuy"],
+
+                latest["AverageSell"],
+
+                latest["TomorrowBreakoutHigh"],
+
+                latest["TomorrowBreakoutLow"],
+
+                latest["YesterdayHighMinusAverage"],
+
+                latest["YesterdayLowMinusAverage"],
+
+            ],
+
+        }
+
+    )
+
+    st.dataframe(
+        plan,
+        use_container_width=True,
+        hide_index=True,
+    )
+
+# ----------------------------------------------------------
+# Workbook Page
+# ----------------------------------------------------------
+
+elif page == "Workbook":
+
+    st.subheader(
+        "Workbook Values"
+    )
+
+    if state.workbook is None:
+
+        st.warning(
+            "Workbook could not be loaded."
+        )
+
+    else:
+
+        st.dataframe(
+            state.workbook,
+            use_container_width=True,
+            height=700,
+        )
+
+# ----------------------------------------------------------
+# Verification
+# ----------------------------------------------------------
+
+elif page == "Verification":
+
+    st.subheader(
+        "Workbook Verification"
+    )
+
+    if state.summary is None:
+
+        st.warning(
+            "Verification unavailable."
+        )
+
+    else:
+
+        a, b, c = st.columns(3)
+
+        with a:
+
+            st.metric(
+                "Cells",
+                state.summary["cells"],
+            )
+
+        with b:
+
+            st.metric(
+                "Matched",
+                state.summary["matched"],
+            )
+
+        with c:
+
+            st.metric(
+                "Accuracy",
+                f"{state.summary['accuracy']:.2f}%",
+            )
+
+        st.divider()
+
+        if state.verification:
+
+            verify = pd.DataFrame(
+
+                [
+
+                    vars(item)
+
+                    for item in state.verification
+
+                ]
+
+            )
+
+            st.dataframe(
+
+                verify,
+
+                use_container_width=True,
+
+                height=650,
+
+            )
+
+        else:
+
+            st.success(
+                "Workbook matches calculations."
+            )
+
+# ----------------------------------------------------------
+# Raw Data
+# ----------------------------------------------------------
+
+elif page == "Raw Data":
+
+    st.subheader(
+        "Historical Market Data"
+    )
+
+    st.dataframe(
+
+        state.history,
+
+        use_container_width=True,
+
+        height=350,
+
+    )
+
+    st.divider()
+
+    st.subheader(
+        "Calculated Worksheet"
+    )
+
+    st.dataframe(
+
+        state.calculations,
+
+        use_container_width=True,
+
+        height=500,
+
+    )
+
+# ----------------------------------------------------------
+# Help
+# ----------------------------------------------------------
+
+elif page == "Help":
+
+    HelpPanel.render()
+
+# ----------------------------------------------------------
+# Footer
+# ----------------------------------------------------------
+
+Footer.render()
+
+# ----------------------------------------------------------
+# Auto Refresh Timer
+# ----------------------------------------------------------
+
+if st.session_state.auto_refresh:
+
+    time.sleep(1)
+
+    st.rerun()
