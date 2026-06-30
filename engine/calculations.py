@@ -1,99 +1,241 @@
+"""
+engine/calculations.py
+
+Taylor NQ calculation engine.
+
+The formulas implemented in this file are taken directly from the
+Taylors NQ.xlsx workbook. Live OHLC data is expected to come from
+Yahoo Finance before being passed into this module.
+
+No UI code.
+No network code.
+Only calculations.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import Optional
+
+import numpy as np
 import pandas as pd
 
 
-def calculate(df: pd.DataFrame) -> pd.DataFrame:
+REQUIRED_COLUMNS = [
+    "Open",
+    "High",
+    "Low",
+    "Close",
+]
 
-    df = df.copy()
 
-    # Previous Day
-    df["Prev_Open"] = df["Open"].shift(1)
-    df["Prev_High"] = df["High"].shift(1)
-    df["Prev_Low"] = df["Low"].shift(1)
-    df["Prev_Close"] = df["Close"].shift(1)
+@dataclass(slots=True)
+class TaylorLevels:
+    date: pd.Timestamp
 
-    #
-    # SELL SIDE
-    #
+    open: float
+    high: float
+    low: float
+    close: float
 
-    # I
-    df["Rally"] = df["High"] - df["Prev_Low"]
+    rally: Optional[float]
+    rally_avg: Optional[float]
+    anticipated_high_from_low: Optional[float]
 
-    # J
-    df["Avg_Rally"] = df["Rally"].rolling(3).mean()
+    buying_high: Optional[float]
+    buying_high_avg: Optional[float]
+    anticipated_high_from_high: Optional[float]
 
-    # K
-    df["Projected_High_1"] = df["Low"] + df["Avg_Rally"]
+    pivot_breakout_high: Optional[float]
+    avg_sell: Optional[float]
 
-    # M
-    df["Buying_High"] = df["High"] - df["Prev_Open"]
+    decline: Optional[float]
+    decline_avg: Optional[float]
+    yesterday_high_minus_avg: Optional[float]
 
-    # N
-    df["Avg_Buying_High"] = df["Buying_High"].rolling(3).mean()
+    buying_low: Optional[float]
+    buying_low_avg: Optional[float]
+    yesterday_low_minus_avg: Optional[float]
 
-    # O
-    df["Projected_High_2"] = df["High"] + df["Avg_Buying_High"]
+    pivot_breakout_low: Optional[float]
+    avg_buy: Optional[float]
 
-    # Q
-    df["Today_High"] = df["High"]
 
-    # S
-    df["Breakout_Buy"] = (
-        2 * ((df["High"] + df["Low"] + df["Close"]) / 3)
-        - df["Low"]
-    )
+class TaylorCalculator:
+    """
+    Implements the calculations contained in Taylors NQ.xlsx.
+    """
 
-    # U
-    df["Average_Sell"] = (
-        df["Projected_High_1"]
-        + df["Projected_High_2"]
-        + df["Today_High"]
-        + df["Breakout_Buy"]
-    ) / 4
+    def calculate(self, df: pd.DataFrame) -> pd.DataFrame:
 
-    #
-    # BUY SIDE
-    #
+        if not isinstance(df.index, pd.DatetimeIndex):
+            raise ValueError("DataFrame index must be a DatetimeIndex.")
 
-    # W
-    df["Decline"] = df["Prev_High"] - df["Low"]
+        missing = [c for c in REQUIRED_COLUMNS if c not in df.columns]
+        if missing:
+            raise ValueError(f"Missing required columns: {missing}")
 
-    # X
-    df["Avg_Decline"] = df["Decline"].rolling(3).mean()
+        out = df.copy()
 
-    # Y
-    df["Projected_Low_1"] = df["High"] - df["Avg_Decline"]
+        prev_open = out["Open"].shift(1)
+        prev_high = out["High"].shift(1)
+        prev_low = out["Low"].shift(1)
 
-    # AA
-    df["Buying_Low"] = df["Prev_Low"] - df["Low"]
+        #
+        # ===== Workbook Columns =====
+        #
 
-    # AB
-    df["Avg_Buying_Low"] = df["Buying_Low"].rolling(3).mean()
+        # I
+        out["Rally"] = out["High"] - prev_low
 
-    # AC
-    df["Projected_Low_2"] = df["Low"] - df["Avg_Buying_Low"]
+        # J
+        out["RallyAvg3"] = out["Rally"].rolling(3).mean()
 
-    # AE
-    df["Today_Low"] = df["Low"]
+        # K
+        out["AnticipatedHighFromLow"] = (
+            out["Low"] + out["RallyAvg3"]
+        )
 
-    # AG
-    df["Breakout_Sell"] = (
-        2 * ((df["High"] + df["Low"] + df["Close"]) / 3)
-        - df["High"]
-    )
+        # M
+        out["BuyingHigh"] = out["High"] - prev_open
 
-    # AI
-    df["Average_Buy"] = (
-        df["Projected_Low_1"]
-        + df["Projected_Low_2"]
-        + df["Today_Low"]
-        + df["Breakout_Sell"]
-    ) / 4
+        # N
+        out["BuyingHighAvg3"] = (
+            out["BuyingHigh"].rolling(3).mean()
+        )
 
-    # Pivot
-    df["Pivot"] = (
-        df["High"] +
-        df["Low"] +
-        df["Close"]
-    ) / 3
+        # O
+        out["AnticipatedHighFromHigh"] = (
+            out["High"] + out["BuyingHighAvg3"]
+        )
 
-    return df
+        # Q
+        out["TodayHigh"] = out["High"]
+
+        # S
+        out["PivotBreakoutHigh"] = (
+            2 * ((out["High"] + out["Low"] + out["Close"]) / 3)
+            - out["Low"]
+        )
+
+        # U
+        out["AvgSell"] = (
+            out[
+                [
+                    "PivotBreakoutHigh",
+                    "TodayHigh",
+                    "AnticipatedHighFromHigh",
+                    "AnticipatedHighFromLow",
+                ]
+            ]
+            .mean(axis=1)
+        )
+
+        # W
+        out["Decline"] = prev_high - out["Low"]
+
+        # X
+        out["DeclineAvg3"] = (
+            out["Decline"].rolling(3).mean()
+        )
+
+        # Y
+        out["YesterdayHighMinusAvg"] = (
+            out["High"] - out["DeclineAvg3"]
+        )
+
+        # AA
+        out["BuyingLow"] = prev_low - out["Low"]
+
+        # AB
+        out["BuyingLowAvg3"] = (
+            out["BuyingLow"].rolling(3).mean()
+        )
+
+        # AC
+        out["YesterdayLowMinusAvg"] = (
+            out["Low"] - out["BuyingLowAvg3"]
+        )
+
+        # AE
+        out["TodayLow"] = out["Low"]
+
+        # AG
+        out["PivotBreakoutLow"] = (
+            2 * ((out["High"] + out["Low"] + out["Close"]) / 3)
+            - out["High"]
+        )
+
+        # AI
+        out["AvgBuy"] = (
+            out[
+                [
+                    "PivotBreakoutLow",
+                    "TodayLow",
+                    "YesterdayLowMinusAvg",
+                    "YesterdayHighMinusAvg",
+                ]
+            ]
+            .mean(axis=1)
+        )
+
+        return out
+
+    def latest(self, df: pd.DataFrame) -> TaylorLevels:
+
+        calc = self.calculate(df)
+        row = calc.iloc[-1]
+
+        return TaylorLevels(
+            date=calc.index[-1],
+
+            open=float(row["Open"]),
+            high=float(row["High"]),
+            low=float(row["Low"]),
+            close=float(row["Close"]),
+
+            rally=self._num(row["Rally"]),
+            rally_avg=self._num(row["RallyAvg3"]),
+            anticipated_high_from_low=self._num(
+                row["AnticipatedHighFromLow"]
+            ),
+
+            buying_high=self._num(row["BuyingHigh"]),
+            buying_high_avg=self._num(row["BuyingHighAvg3"]),
+            anticipated_high_from_high=self._num(
+                row["AnticipatedHighFromHigh"]
+            ),
+
+            pivot_breakout_high=self._num(
+                row["PivotBreakoutHigh"]
+            ),
+            avg_sell=self._num(row["AvgSell"]),
+
+            decline=self._num(row["Decline"]),
+            decline_avg=self._num(row["DeclineAvg3"]),
+            yesterday_high_minus_avg=self._num(
+                row["YesterdayHighMinusAvg"]
+            ),
+
+            buying_low=self._num(row["BuyingLow"]),
+            buying_low_avg=self._num(row["BuyingLowAvg3"]),
+            yesterday_low_minus_avg=self._num(
+                row["YesterdayLowMinusAvg"]
+            ),
+
+            pivot_breakout_low=self._num(
+                row["PivotBreakoutLow"]
+            ),
+            avg_buy=self._num(row["AvgBuy"]),
+        )
+
+    @staticmethod
+    def _num(value):
+
+        if pd.isna(value):
+            return None
+
+        if isinstance(value, (np.floating, np.integer)):
+            return float(value)
+
+        return float(value)
