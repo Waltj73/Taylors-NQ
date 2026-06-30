@@ -26,15 +26,21 @@ ticker = FUTURES_MAP[selected_label]
 # --- TAYLOR ENGINE DATA PROCESSING ---
 @st.cache_data(ttl=3600)
 def get_taylor_data(symbol):
-    # Fetch 3 months of daily data to generate clean 3-day rolling calculations
-    df = yf.download(symbol, period="3mo")
+    # Fetch 3 months of daily history with strict adjustments forced
+    df = yf.download(symbol, period="3mo", group_by="ticker", auto_adjust=True)
     
-    # Flatten any multi-index columns from newer yfinance versions
+    # Force column flattening to handle yfinance futures multi-index structures
     if isinstance(df.columns, pd.MultiIndex):
-        df.columns = df.columns.get_level_values(0)
-        
+        if symbol in df.columns.levels[0]:
+            df = df[symbol]  # Extract just the specific ticker's dataframe layer
+        else:
+            df.columns = df.columns.get_level_values(0)
+            
     if df.empty:
         return df
+        
+    # Drop rows that don't have valid OHLC metrics to avoid shift calculation errors
+    df = df.dropna(subset=['High', 'Low', 'Close'])
     
     # 1. Calculate raw swing metrics from consecutive daily bars
     df['Decline_Raw'] = df['High'].shift(1) - df['Low']
