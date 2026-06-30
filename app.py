@@ -193,21 +193,7 @@ st.divider()
 
 if page == "Dashboard":
 
-    st.write("Rows:", len(state.calculations))
-
-    st.write("Columns:")
-    st.write(state.calculations.columns.tolist())
-
-    st.write("Last 3 Rows")
-    st.dataframe(state.calculations.tail(3))
-
-    latest = state.calculations.iloc[-1]
-
-    st.write("Latest Row")
-    st.write(latest)
-
-    st.stop()
-
+    
     latest = state.calculations.iloc[-1]
     metric1, metric2, metric3, metric4 = st.columns(4)
 
