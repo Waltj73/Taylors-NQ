@@ -1,6 +1,12 @@
-streamlit
-pandas
-numpy
-plotly
-yfinance
-openpyxl
+# requirements.txt
+streamlit>=1.45.0
+pandas>=2.2.2
+numpy>=2.1.0
+yfinance>=0.2.61
+openpyxl>=3.1.5
+xlsxwriter>=3.2.0
+python-dateutil>=2.9.0
+pytz>=2025.2
+tzdata>=2025.2
+requests>=2.32.3
+lxml>=5.3.0
