@@ -6,22 +6,22 @@ import numpy as np
 
 
 # =========================================================
-# OUTPUT STRUCTURE (MATCHES app.py)
+# OUTPUT MODEL (MATCHES app.py EXACTLY)
 # =========================================================
 
 @dataclass
 class TaylorLevels:
     AverageBuy: float = 0.0
     AverageSell: float = 0.0
-    BreakoutHigh: float = 0.0
-    BreakoutLow: float = 0.0
+    TomorrowBreakoutHigh: float = 0.0
+    TomorrowBreakoutLow: float = 0.0
     BuyingHigh: float = 0.0
     BuyingLow: float = 0.0
     Decline: float = 0.0
 
 
 # =========================================================
-# CALCULATION ENGINE
+# ENGINE
 # =========================================================
 
 class TaylorCalculator:
@@ -38,10 +38,10 @@ class TaylorCalculator:
         if any(c not in df.columns for c in required):
             raise ValueError("Missing OHLC columns")
 
-        # ensure all expected columns exist
+        # ensure required columns exist
         for col in [
             "AverageBuy", "AverageSell",
-            "BreakoutHigh", "BreakoutLow",
+            "TomorrowBreakoutHigh", "TomorrowBreakoutLow",
             "BuyingHigh", "BuyingLow",
             "Decline"
         ]:
@@ -52,7 +52,7 @@ class TaylorCalculator:
             return df
 
         # =====================================================
-        # MAIN LOOP
+        # LOOP
         # =====================================================
 
         for i in range(1, len(df)):
@@ -66,39 +66,40 @@ class TaylorCalculator:
 
             prevH = df.at[p, "High"]
             prevL = df.at[p, "Low"]
-            prevC = df.at[p, "Close"]
 
-            # =================================================
+            # -----------------------
             # CORE TAYLOR VALUES
-            # =================================================
+            # -----------------------
 
             df.at[r, "BuyingHigh"] = H - prevH
             df.at[r, "BuyingLow"] = prevL - L
             df.at[r, "Decline"] = prevH - L
 
-            # =================================================
+            # -----------------------
             # PIVOT MODEL
-            # =================================================
+            # -----------------------
 
             pivot = (H + L + C) / 3
 
-            breakout_high = (2 * pivot) - L
-            breakout_low = (2 * pivot) - H
+            df.at[r, "TomorrowBreakoutHigh"] = (2 * pivot) - L
+            df.at[r, "TomorrowBreakoutLow"] = (2 * pivot) - H
 
-            df.at[r, "BreakoutHigh"] = breakout_high
-            df.at[r, "BreakoutLow"] = breakout_low
+            # -----------------------
+            # FINAL LEVELS
+            # -----------------------
 
-            # =================================================
-            # FINAL LEVELS (STABLE + SIMPLE)
-            # =================================================
+            df.at[r, "AverageBuy"] = (
+                df.at[r, "TomorrowBreakoutLow"] + L
+            ) / 2
 
-            df.at[r, "AverageBuy"] = (breakout_low + L) / 2
-            df.at[r, "AverageSell"] = (breakout_high + H) / 2
+            df.at[r, "AverageSell"] = (
+                df.at[r, "TomorrowBreakoutHigh"] + H
+            ) / 2
 
         return df
 
     # =========================================================
-    # SAFE OUTPUT FOR APP
+    # OUTPUT FOR APP
     # =========================================================
 
     def latest(self, df: pd.DataFrame) -> TaylorLevels:
@@ -109,8 +110,8 @@ class TaylorCalculator:
         return TaylorLevels(
             AverageBuy=float(r["AverageBuy"]),
             AverageSell=float(r["AverageSell"]),
-            BreakoutHigh=float(r["BreakoutHigh"]),
-            BreakoutLow=float(r["BreakoutLow"]),
+            TomorrowBreakoutHigh=float(r["TomorrowBreakoutHigh"]),
+            TomorrowBreakoutLow=float(r["TomorrowBreakoutLow"]),
             BuyingHigh=float(r["BuyingHigh"]),
             BuyingLow=float(r["BuyingLow"]),
             Decline=float(r["Decline"]),
