@@ -1,7 +1,28 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 import pandas as pd
 
+
+# =========================================================
+# OUTPUT OBJECT (USED BY engine/__init__.py + app.py)
+# =========================================================
+
+@dataclass
+class TaylorLevels:
+    AverageBuy: float = 0.0
+    AverageSell: float = 0.0
+    TomorrowBreakoutHigh: float = 0.0
+    TomorrowBreakoutLow: float = 0.0
+    BuyingHigh: float = 0.0
+    BuyingLow: float = 0.0
+    Decline: float = 0.0
+    Rally: float = 0.0
+
+
+# =========================================================
+# CALC ENGINE (SCREENSHOT-BASED MODEL)
+# =========================================================
 
 class TaylorCalculator:
 
@@ -13,64 +34,72 @@ class TaylorCalculator:
         if any(c not in df.columns for c in required):
             raise ValueError("Missing OHLC columns")
 
-        # -----------------------------
-        # CORE SCREENSHOT LOGIC
-        # -----------------------------
+        # -------------------------------------------------
+        # CORE COLUMNS (SAFE INIT)
+        # -------------------------------------------------
+        for c in TaylorLevels.__annotations__.keys():
+            if c not in df.columns:
+                df[c] = 0.0
 
-        df["Rally"] = df["High"] - df["Low"].shift(1)
-        df["Decline"] = df["High"].shift(1) - df["Low"]
+        if len(df) < 2:
+            return df
 
-        df["BuyingHigh"] = df["High"] - df["High"].shift(1)
-        df["BuyingUnder"] = df["Low"].shift(1) - df["Low"]
+        # =====================================================
+        # MAIN LOOP
+        # =====================================================
 
-        # -----------------------------
-        # 3-DAY AVERAGES
-        # -----------------------------
+        for i in range(1, len(df)):
 
-        df["RallyAvg"] = df["Rally"].rolling(3).mean()
-        df["DeclineAvg"] = df["Decline"].rolling(3).mean()
-        df["BuyingHighAvg"] = df["BuyingHigh"].rolling(3).mean()
-        df["BuyingUnderAvg"] = df["BuyingUnder"].rolling(3).mean()
+            r = df.index[i]
+            p = df.index[i - 1]
 
-        # -----------------------------
-        # PIVOT STRUCTURE
-        # -----------------------------
+            H = df.at[r, "High"]
+            L = df.at[r, "Low"]
+            C = df.at[r, "Close"]
 
-        pivot = (df["High"] + df["Low"] + df["Close"]) / 3
+            prevH = df.at[p, "High"]
+            prevL = df.at[p, "Low"]
 
-        df["TomorrowBreakoutHigh"] = (2 * pivot) - df["Low"]
-        df["TomorrowBreakoutLow"] = (2 * pivot) - df["High"]
+            # -------------------------------------------------
+            # CORE TAYLOR (FROM YOUR SCREENSHOTS)
+            # -------------------------------------------------
+            df.at[r, "Rally"] = H - prevL
+            df.at[r, "Decline"] = prevH - L
+            df.at[r, "BuyingHigh"] = H - prevH
+            df.at[r, "BuyingLow"] = prevL - L
 
-        # -----------------------------
-        # ENVELOPES
-        # -----------------------------
+            # -------------------------------------------------
+            # PIVOT BREAKOUT MODEL
+            # -------------------------------------------------
+            pivot = (H + L + C) / 3
 
-        df["AverageSell"] = df["High"] + (df["RallyAvg"] + df["BuyingHighAvg"]) / 2
-        df["AverageBuy"] = df["Low"] - (df["DeclineAvg"] + df["BuyingUnderAvg"]) / 2
+            df.at[r, "TomorrowBreakoutHigh"] = (2 * pivot) - L
+            df.at[r, "TomorrowBreakoutLow"] = (2 * pivot) - H
+
+            # -------------------------------------------------
+            # ENVELOPE (SIMPLE + STABLE)
+            # -------------------------------------------------
+            df.at[r, "AverageBuy"] = (df.at[r, "TomorrowBreakoutLow"] + L) / 2
+            df.at[r, "AverageSell"] = (df.at[r, "TomorrowBreakoutHigh"] + H) / 2
 
         return df
 
-    # =====================================================
-    # APP OUTPUT (KEY FIX HERE)
-    # =====================================================
+    # =========================================================
+    # SAFE OUTPUT (NO MORE KEY ERRORS)
+    # =========================================================
 
-    def latest(self, df: pd.DataFrame):
+    def latest(self, df: pd.DataFrame) -> TaylorLevels:
 
         d = self.calculate(df)
         r = d.iloc[-1]
 
-        return {
-            "AverageBuy": float(r["AverageBuy"]),
-            "AverageSell": float(r["AverageSell"]),
-
-            "TomorrowBreakoutHigh": float(r["TomorrowBreakoutHigh"]),
-            "TomorrowBreakoutLow": float(r["TomorrowBreakoutLow"]),
-
-            "BuyingHigh": float(r["BuyingHigh"]),
-
-            # 🔴 FIX: app expects BuyingLow, not BuyingUnder
-            "BuyingLow": float(r["BuyingUnder"]),
-
-            "Decline": float(r["Decline"]),
-            "Rally": float(r["Rally"]),
-        }
+        return TaylorLevels(
+            AverageBuy=float(r["AverageBuy"]),
+            AverageSell=float(r["AverageSell"]),
+            TomorrowBreakoutHigh=float(r["TomorrowBreakoutHigh"]),
+            TomorrowBreakoutLow=float(r["TomorrowBreakoutLow"]),
+            BuyingHigh=float(r["BuyingHigh"]),
+            BuyingLow=float(r["BuyingLow"]),
+            Decline=float(r["Decline"]),
+            Rally=float(r["Rally"]),
+        )
