@@ -193,15 +193,19 @@ st.divider()
 
 if page == "Dashboard":
 
+    st.write("Rows:", len(state.calculations))
+
+    st.write("Columns:")
     st.write(state.calculations.columns.tolist())
-    st.write(state.calculations.tail(3))
 
-latest = state.calculations.iloc[-1]
+    st.write("Last 3 Rows")
+    st.dataframe(state.calculations.tail(3))
 
-st.write("Latest Row")
-st.write(latest)
+    latest = state.calculations.iloc[-1]
 
-st.stop()
+    st.write("Latest Row")
+    st.write(latest)
+
     st.stop()
 
     latest = state.calculations.iloc[-1]
