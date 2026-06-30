@@ -1,198 +1,212 @@
 # app.py
 
+"""
+Taylor NQ
+Main Application
+
+Production entry point.
+"""
+
+from __future__ import annotations
+
+import traceback
+
 import streamlit as st
 
-from data.loader import DataLoader
-from engine.taylor_engine import TaylorEngine
+from config import config, ensure_directories
+from engine import (
+    TaylorCalculator,
+    YahooData,
+    YahooQuote,
+    SignalEngine,
+    SessionManager,
+)
+
 
 st.set_page_config(
-    page_title="Taylor Workstation",
-    page_icon="📈",
+    page_title=config.APP_NAME,
     layout="wide",
+    initial_sidebar_state="expanded",
 )
 
-st.title("Taylor Workstation")
+ensure_directories()
 
-# -------------------------------------------------------
-# Sidebar
-# -------------------------------------------------------
 
-with st.sidebar:
+@st.cache_data(ttl=config.REFRESH_SECONDS)
+def load_history():
 
-    st.header("Settings")
+    data = YahooData(config.SYMBOL)
 
-    symbol = st.selectbox(
-        "Market",
-        [
-            "NQ=F",
-            "ES=F",
-            "YM=F",
-            "RTY=F",
-            "CL=F",
-            "GC=F",
-        ],
-        index=0,
+    return data.latest(
+        bars=250,
+        interval=config.HISTORY_INTERVAL,
     )
 
-    years = st.selectbox(
-        "History",
-        [
-            "1y",
-            "2y",
-            "5y",
-            "10y",
-        ],
-        index=2,
-    )
 
-    refresh = st.button(
-        "Refresh Data",
-        use_container_width=True,
-    )
+def main():
 
-# -------------------------------------------------------
-# Load Data
-# -------------------------------------------------------
+    st.title("Taylor NQ")
 
-loader = DataLoader()
+    try:
 
-try:
+        history = load_history()
 
-    with st.spinner("Downloading market data..."):
+        calculator = TaylorCalculator()
 
-        df = loader.from_yahoo(
-            symbol=symbol,
-            period=years,
-            interval="1d",
+        calculated = calculator.calculate(history)
+
+        latest = calculator.latest(history)
+
+        signal = SignalEngine().evaluate(calculated)
+
+        quote = YahooQuote(config.SYMBOL).quote()
+
+        session = SessionManager().info()
+
+        #
+        # Header
+        #
+
+        c1, c2, c3, c4 = st.columns(4)
+
+        c1.metric(
+            "Current Price",
+            f"{quote.price:,.2f}",
         )
 
-except Exception as e:
+        c2.metric(
+            "Today's High",
+            f"{quote.high:,.2f}",
+        )
 
-    st.error(str(e))
-    st.stop()
+        c3.metric(
+            "Today's Low",
+            f"{quote.low:,.2f}",
+        )
 
-# -------------------------------------------------------
-# Run Taylor Engine
-# -------------------------------------------------------
+        c4.metric(
+            "Previous Close",
+            f"{quote.previous_close:,.2f}",
+        )
 
-engine = TaylorEngine(df)
+        st.divider()
 
-try:
+        #
+        # Session
+        #
 
-    levels = engine.latest()
+        s1, s2, s3 = st.columns(3)
 
-except Exception as e:
+        s1.metric(
+            "Session",
+            session.session.value,
+        )
 
-    st.error(str(e))
-    st.stop()
+        s2.metric(
+            "Trading Day",
+            str(session.trading_day),
+        )
 
-# -------------------------------------------------------
-# Header
-# -------------------------------------------------------
+        s3.metric(
+            "Minutes Remaining",
+            session.minutes_until_close,
+        )
 
-st.success(f"Latest Trading Day: {levels.date}")
+        st.divider()
 
-# -------------------------------------------------------
-# Daily OHLC
-# -------------------------------------------------------
+        #
+        # Average Buy / Sell
+        #
 
-st.subheader("Current Daily Candle")
+        a1, a2 = st.columns(2)
 
-c1, c2, c3, c4 = st.columns(4)
+        a1.metric(
+            "Average Buy",
+            f"{latest.avg_buy:,.2f}"
+            if latest.avg_buy is not None
+            else "-",
+        )
 
-c1.metric(
-    "Open",
-    f"{levels.open:,.2f}",
-)
+        a2.metric(
+            "Average Sell",
+            f"{latest.avg_sell:,.2f}"
+            if latest.avg_sell is not None
+            else "-",
+        )
 
-c2.metric(
-    "High",
-    f"{levels.high:,.2f}",
-)
+        #
+        # Pivot Levels
+        #
 
-c3.metric(
-    "Low",
-    f"{levels.low:,.2f}",
-)
+        p1, p2 = st.columns(2)
 
-c4.metric(
-    "Close",
-    f"{levels.close:,.2f}",
-)
+        p1.metric(
+            "Pivot Breakout High",
+            f"{latest.pivot_breakout_high:,.2f}"
+            if latest.pivot_breakout_high is not None
+            else "-",
+        )
 
-st.divider()
+        p2.metric(
+            "Pivot Breakout Low",
+            f"{latest.pivot_breakout_low:,.2f}"
+            if latest.pivot_breakout_low is not None
+            else "-",
+        )
 
-# -------------------------------------------------------
-# Taylor Levels
-# -------------------------------------------------------
+        st.divider()
 
-left, right = st.columns(2)
+        #
+        # Signal
+        #
 
-with left:
+        st.subheader("Taylor Signal")
 
-    st.subheader("Sell Side")
+        st.success(signal.day_type.value)
 
-    st.metric(
-        "Projected High #1",
-        f"{levels.projected_high_1:,.2f}",
-    )
+        col1, col2 = st.columns(2)
 
-    st.metric(
-        "Projected High #2",
-        f"{levels.projected_high_2:,.2f}",
-    )
+        col1.metric(
+            "Above Avg Buy",
+            "YES" if signal.above_avg_buy else "NO",
+        )
 
-    st.metric(
-        "Average Sell",
-        f"{levels.average_sell:,.2f}",
-    )
+        col2.metric(
+            "Below Avg Sell",
+            "YES" if signal.below_avg_sell else "NO",
+        )
 
-    st.metric(
-        "Breakout Buy",
-        f"{levels.breakout_buy:,.2f}",
-    )
+        st.divider()
 
-with right:
+        st.subheader("Calculation Table")
 
-    st.subheader("Buy Side")
+        display_columns = [
+            "Open",
+            "High",
+            "Low",
+            "Close",
+            "AvgBuy",
+            "AvgSell",
+            "PivotBreakoutHigh",
+            "PivotBreakoutLow",
+            "AnticipatedHighFromLow",
+            "AnticipatedHighFromHigh",
+            "YesterdayHighMinusAvg",
+            "YesterdayLowMinusAvg",
+        ]
 
-    st.metric(
-        "Projected Low #1",
-        f"{levels.projected_low_1:,.2f}",
-    )
+        st.dataframe(
+            calculated[display_columns].tail(30),
+            use_container_width=True,
+            height=650,
+        )
 
-    st.metric(
-        "Projected Low #2",
-        f"{levels.projected_low_2:,.2f}",
-    )
+    except Exception:
 
-    st.metric(
-        "Average Buy",
-        f"{levels.average_buy:,.2f}",
-    )
+        st.error("Application Error")
 
-    st.metric(
-        "Breakout Sell",
-        f"{levels.breakout_sell:,.2f}",
-    )
+        st.code(traceback.format_exc())
 
-st.divider()
 
-st.subheader("Pivot")
-
-st.metric(
-    "Pivot",
-    f"{levels.pivot:,.2f}",
-)
-
-# -------------------------------------------------------
-# Raw Data
-# -------------------------------------------------------
-
-with st.expander("Daily Data"):
-
-    st.dataframe(
-        df.tail(20),
-        use_container_width=True,
-        hide_index=True,
-    )
+if __name__ == "__main__":
+    main()
