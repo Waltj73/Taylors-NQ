@@ -4,17 +4,34 @@ import pandas as pd
 import numpy as np
 
 st.set_page_config(page_title="Taylor Envelope Projector", layout="wide")
-st.title("📐 Taylor Trading Technique: Envelope Projector")
+st.title("📐 Taylor Trading Technique: Futures Envelope Projector")
 st.caption("Formulated directly from the Timeless Dollar Book Method Logic")
 
-ticker = st.sidebar.text_input("Asset Ticker", value="SPY").upper()
+# --- TICKER DICTIONARY MAP ---
+FUTURES_MAP = {
+    "MNQ (Micro Nasdaq)": "MNQ=F",
+    "MES (Micro S&P 500)": "MES=F",
+    "MGC (Micro Gold)": "MGC=F",
+    "NQ (Mini Nasdaq)": "NQ=F",
+    "ES (Mini S&P 500)": "ES=F"
+}
+
+# --- SIDEBAR TOGGLE ---
+st.sidebar.header("Select Market")
+selected_label = st.sidebar.selectbox("Choose a Contract:", list(FUTURES_MAP.keys()))
+ticker = FUTURES_MAP[selected_label]
 
 @st.cache_data(ttl=3600)
 def get_taylor_data(symbol):
-    # Fetch enough history to build clean rolling calculations
+    # Fetch 3 months of history to build accurate rolling calculations
     df = yf.download(symbol, period="3mo")
+    
+    # Clean up multi-index columns if yfinance delivers them
     if isinstance(df.columns, pd.MultiIndex):
         df.columns = df.columns.get_level_values(0)
+        
+    if df.empty:
+        return df
     
     # 1. Calculate basic raw values from video formulas
     df['Decline_Raw'] = df['High'].shift(1) - df['Low']
@@ -41,26 +58,31 @@ def get_taylor_data(symbol):
 
 try:
     data = get_taylor_data(ticker)
+    
+    if data.empty:
+        st.error(f"Failed to pull data for {ticker}. The contract might be between cycles or throttled.")
+        st.stop()
+        
     current_session = data.iloc[-1]
     
-    st.subheader(f"Projected Zones for Next Trading Session ({ticker})")
+    st.subheader(f"Projected Zones for Next Trading Session: **{selected_label}**")
     
     # Render Envelopes Side-by-Side
     col_sell, col_buy = st.columns(2)
     
     with col_sell:
         st.error("### 🔴 Sell Envelope (Resistance)")
-        st.metric("Target Buying High (Extreme Extension)", f"${current_session['Target_Buying_High']:.2f}")
-        st.metric("Target Rally Point", f"${current_session['Target_Rally']:.2f}")
-        st.metric("Session Reference High", f"${current_session['High']:.2f}")
-        st.metric("Pivot Breakout (Long)", f"${current_session['Pivot_BO_Long']:.2f}")
+        st.metric("Target Buying High (Extreme Extension)", f"{current_session['Target_Buying_High']:.2f}")
+        st.metric("Target Rally Point", f"{current_session['Target_Rally']:.2f}")
+        st.metric("Session Reference High", f"{current_session['High']:.2f}")
+        st.metric("Pivot Breakout (Long)", f"{current_session['Pivot_BO_Long']:.2f}")
         
     with col_buy:
         st.success("### 🟢 Buy Envelope (Support)")
-        st.metric("Pivot Breakout (Short)", f"${current_session['Pivot_BO_Short']:.2f}")
-        st.metric("Session Reference Low", f"${current_session['Low']:.2f}")
-        st.metric("Target Decline Point", f"${current_session['Target_Decline']:.2f}")
-        st.metric("Target Buying Under (Extreme Dip)", f"${current_session['Target_Buying_Under']:.2f}")
+        st.metric("Pivot Breakout (Short)", f"{current_session['Pivot_BO_Short']:.2f}")
+        st.metric("Session Reference Low", f"{current_session['Low']:.2f}")
+        st.metric("Target Decline Point", f"{current_session['Target_Decline']:.2f}")
+        st.metric("Target Buying Under (Extreme Dip)", f"{current_session['Target_Buying_Under']:.2f}")
 
     # Ledger display
     st.markdown("---")
