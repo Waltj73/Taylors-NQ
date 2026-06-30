@@ -1,241 +1,752 @@
+# engine/calculations.py
+
 """
-engine/calculations.py
+Taylor Calculation Engine
 
-Taylor NQ calculation engine.
+This module reproduces the Taylor workbook calculations.
 
-The formulas implemented in this file are taken directly from the
-Taylors NQ.xlsx workbook. Live OHLC data is expected to come from
-Yahoo Finance before being passed into this module.
+Workbook Source
+---------------
+Sheet : NQ
 
-No UI code.
-No network code.
-Only calculations.
+Rows
+----
+3   Headers
+4   Seed Row
+5+  Calculated Rows
+
+Columns
+-------
+
+A   Date
+B   Open
+C   High
+D   Low
+E   Close
+
+F   HIGH (Average Sell Alias)
+G   LOW  (Average Buy Alias)
+
+I   Rally
+J   Rally 3-Day Average
+K   Tomorrow Anticipated High (Low + Avg)
+
+M   Buying High
+N   Buying High 3-Day Average
+O   Tomorrow Anticipated High (High + Avg)
+
+Q   Today's High
+S   Breakout High
+U   Average Sell
+
+W   Decline
+X   Decline 3-Day Average
+Y   Yesterday High Minus Avg
+
+AA  Buying Low
+AB  Buying Low 3-Day Average
+AC  Yesterday Low Minus Avg
+
+AE  Today's Low
+AG  Breakout Low
+AI  Average Buy
+
+The implementation intentionally mirrors Excel row-by-row instead
+of using rolling windows so the output matches the workbook exactly.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Optional
 
 import numpy as np
 import pandas as pd
 
 
-REQUIRED_COLUMNS = [
-    "Open",
-    "High",
-    "Low",
-    "Close",
-]
+# ----------------------------------------------------------------------
+# Seed values taken directly from workbook row 4
+# ----------------------------------------------------------------------
+
+SEED_W = 45.0
+SEED_X = 51.0
+SEED_AA = 12.0
 
 
 @dataclass(slots=True)
 class TaylorLevels:
-    date: pd.Timestamp
 
-    open: float
-    high: float
-    low: float
-    close: float
+    average_buy: float
 
-    rally: Optional[float]
-    rally_avg: Optional[float]
-    anticipated_high_from_low: Optional[float]
+    average_sell: float
 
-    buying_high: Optional[float]
-    buying_high_avg: Optional[float]
-    anticipated_high_from_high: Optional[float]
+    breakout_high: float
 
-    pivot_breakout_high: Optional[float]
-    avg_sell: Optional[float]
+    breakout_low: float
 
-    decline: Optional[float]
-    decline_avg: Optional[float]
-    yesterday_high_minus_avg: Optional[float]
+    anticipated_high_from_low: float
 
-    buying_low: Optional[float]
-    buying_low_avg: Optional[float]
-    yesterday_low_minus_avg: Optional[float]
+    anticipated_high_from_high: float
 
-    pivot_breakout_low: Optional[float]
-    avg_buy: Optional[float]
+    yesterday_high_minus_average: float
+
+    yesterday_low_minus_average: float
 
 
 class TaylorCalculator:
-    """
-    Implements the calculations contained in Taylors NQ.xlsx.
-    """
 
-    def calculate(self, df: pd.DataFrame) -> pd.DataFrame:
+    def __init__(self):
 
-        if not isinstance(df.index, pd.DatetimeIndex):
-            raise ValueError("DataFrame index must be a DatetimeIndex.")
+        pass
 
-        missing = [c for c in REQUIRED_COLUMNS if c not in df.columns]
+    # ---------------------------------------------------------------
+
+    def calculate(
+        self,
+        dataframe: pd.DataFrame,
+    ) -> pd.DataFrame:
+
+        df = dataframe.copy()
+
+        #
+        # Ensure required columns exist.
+        #
+
+        required = [
+            "Open",
+            "High",
+            "Low",
+            "Close",
+        ]
+
+        missing = [
+            c
+            for c in required
+            if c not in df.columns
+        ]
+
         if missing:
-            raise ValueError(f"Missing required columns: {missing}")
 
-        out = df.copy()
-
-        prev_open = out["Open"].shift(1)
-        prev_high = out["High"].shift(1)
-        prev_low = out["Low"].shift(1)
+            raise ValueError(
+                f"Missing required columns: {missing}"
+            )
 
         #
-        # ===== Workbook Columns =====
+        # Allocate workbook columns.
         #
 
-        # I
-        out["Rally"] = out["High"] - prev_low
+        workbook_columns = [
 
-        # J
-        out["RallyAvg3"] = out["Rally"].rolling(3).mean()
+            "HIGH",
+            "LOW",
 
-        # K
-        out["AnticipatedHighFromLow"] = (
-            out["Low"] + out["RallyAvg3"]
+            "Rally",
+            "Rally3DayAvg",
+            "TomorrowAnticipatedHighFromLow",
+
+            "BuyingHigh",
+            "BuyingHigh3DayAvg",
+            "TomorrowAnticipatedHighFromHigh",
+
+            "TodaysHigh",
+            "TomorrowBreakoutHigh",
+            "AverageSell",
+
+            "Decline",
+            "Decline3DayAvg",
+            "YesterdayHighMinusAverage",
+
+            "BuyingLow",
+            "BuyingLow3DayAvg",
+            "YesterdayLowMinusAverage",
+
+            "TodaysLow",
+            "TomorrowBreakoutLow",
+            "AverageBuy",
+        ]
+
+        for column in workbook_columns:
+
+            if column not in df.columns:
+
+                df[column] = np.nan
+
+        #
+        # ------------------------------------------------------------------
+        # Seed rows
+        #
+        # Excel begins calculations using row 4.
+        #
+        # DataFrame row 0 represents workbook row 4.
+        # DataFrame row 1 represents workbook row 5.
+        # ------------------------------------------------------------------
+        #
+
+        if len(df) == 0:
+
+            return df
+
+        #
+        # Workbook constants.
+        #
+
+        df.at[df.index[0], "Decline"] = SEED_W
+
+        df.at[df.index[0], "Decline3DayAvg"] = SEED_X
+
+        df.at[df.index[0], "BuyingLow"] = SEED_AA
+
+        #
+        # Workbook formula:
+        #
+        # M4 = C4 - B3
+        #
+        # We cannot reproduce B3 because it precedes the imported
+        # history. The workbook uses it only as a seed.
+        #
+        # Therefore we initialize BuyingHigh to NaN and allow row 5
+        # to begin normal calculations.
+        #
+
+        df.at[df.index[0], "BuyingHigh"] = np.nan
+
+        #
+        # Alias columns
+        #
+
+        df.at[df.index[0], "HIGH"] = np.nan
+        df.at[df.index[0], "LOW"] = np.nan
+
+        #
+        # ==============================================================
+        # Begin workbook calculations.
+        #
+        # Workbook Row 5 == DataFrame Row 1
+        # ==============================================================
+        #
+
+        for row in range(1, len(df)):
+
+            previous = row - 1
+
+            open_price = float(
+                df.iloc[row]["Open"]
+            )
+
+            high = float(
+                df.iloc[row]["High"]
+            )
+
+            low = float(
+                df.iloc[row]["Low"]
+            )
+
+            close = float(
+                df.iloc[row]["Close"]
+            )
+
+            previous_open = float(
+                df.iloc[previous]["Open"]
+            )
+
+            previous_high = float(
+                df.iloc[previous]["High"]
+            )
+
+            previous_low = float(
+                df.iloc[previous]["Low"]
+            )
+
+            #
+            # Column I
+            #
+            # = High - Previous Low
+            #
+
+            rally = (
+                high
+                - previous_low
+            )
+
+            df.iat[
+                row,
+                df.columns.get_loc("Rally")
+            ] = rally
+
+            #
+            # Remaining workbook columns continue...
+            #
+                        #
+            # ----------------------------------------------------------
+            # Column J
+            #
+            # =SUM(I[r-2],I[r-1],I[r])/3
+            # ----------------------------------------------------------
+            #
+
+            def _avg3(column: str) -> float:
+
+                values = []
+
+                for offset in (-2, -1, 0):
+
+                    idx = row + offset
+
+                    if idx < 0:
+                        continue
+
+                    value = df.iat[
+                        idx,
+                        df.columns.get_loc(column),
+                    ]
+
+                    if pd.notna(value):
+                        values.append(float(value))
+
+                if not values:
+                    return np.nan
+
+                #
+                # Excel always divides by 3.
+                # Missing seed values are treated as zero.
+                #
+
+                while len(values) < 3:
+                    values.insert(0, 0.0)
+
+                return sum(values) / 3.0
+
+            rally_avg = _avg3(
+                "Rally"
+            )
+
+            df.iat[
+                row,
+                df.columns.get_loc(
+                    "Rally3DayAvg"
+                ),
+            ] = rally_avg
+
+            #
+            # ----------------------------------------------------------
+            # Column K
+            #
+            # =Low + Rally Average
+            # ----------------------------------------------------------
+            #
+
+            anticipated_high_low = (
+                low
+                + rally_avg
+            )
+
+            df.iat[
+                row,
+                df.columns.get_loc(
+                    "TomorrowAnticipatedHighFromLow"
+                ),
+            ] = anticipated_high_low
+
+            #
+            # ----------------------------------------------------------
+            # Column M
+            #
+            # =High - Previous Open
+            # ----------------------------------------------------------
+            #
+
+            buying_high = (
+                high
+                - previous_open
+            )
+
+            df.iat[
+                row,
+                df.columns.get_loc(
+                    "BuyingHigh"
+                ),
+            ] = buying_high
+
+            #
+            # ----------------------------------------------------------
+            # Column N
+            #
+            # =SUM(M[r-2]:M[r])/3
+            # ----------------------------------------------------------
+            #
+
+            buying_high_avg = _avg3(
+                "BuyingHigh"
+            )
+
+            df.iat[
+                row,
+                df.columns.get_loc(
+                    "BuyingHigh3DayAvg"
+                ),
+            ] = buying_high_avg
+
+            #
+            # ----------------------------------------------------------
+            # Column O
+            #
+            # =High + Buying High Average
+            # ----------------------------------------------------------
+            #
+
+            anticipated_high_high = (
+                high
+                + buying_high_avg
+            )
+
+            df.iat[
+                row,
+                df.columns.get_loc(
+                    "TomorrowAnticipatedHighFromHigh"
+                ),
+            ] = anticipated_high_high
+
+            #
+            # ----------------------------------------------------------
+            # Column Q
+            #
+            # =Today's High
+            # ----------------------------------------------------------
+            #
+
+            df.iat[
+                row,
+                df.columns.get_loc(
+                    "TodaysHigh"
+                ),
+            ] = high
+
+            #
+            # ----------------------------------------------------------
+            # Pivot Point
+            #
+            # =(High+Low+Close)/3
+            # ----------------------------------------------------------
+            #
+
+            pivot = (
+                high
+                + low
+                + close
+            ) / 3.0
+
+            #
+            # ----------------------------------------------------------
+            # Column S
+            #
+            # =2*Pivot-Low
+            # ----------------------------------------------------------
+            #
+
+            breakout_high = (
+                (2.0 * pivot)
+                - low
+            )
+
+            df.iat[
+                row,
+                df.columns.get_loc(
+                    "TomorrowBreakoutHigh"
+                ),
+            ] = breakout_high
+
+            #
+            # ----------------------------------------------------------
+            # Column U
+            #
+            # =AVERAGE(S,Q,O,K)
+            # ----------------------------------------------------------
+            #
+
+            average_sell = (
+                breakout_high
+                + high
+                + anticipated_high_high
+                + anticipated_high_low
+            ) / 4.0
+
+            df.iat[
+                row,
+                df.columns.get_loc(
+                    "AverageSell"
+                ),
+            ] = average_sell
+
+            #
+            # Excel alias
+            #
+            # F = U
+            #
+
+            df.iat[
+                row,
+                df.columns.get_loc(
+                    "HIGH"
+                ),
+            ] = average_sell
+
+            #
+            # Continue with Column W...
+            #
+                        #
+            # ----------------------------------------------------------
+            # Column W
+            #
+            # =Previous High - Current Low
+            # ----------------------------------------------------------
+            #
+
+            decline = (
+                previous_high
+                - low
+            )
+
+            df.iat[
+                row,
+                df.columns.get_loc(
+                    "Decline"
+                ),
+            ] = decline
+
+            #
+            # ----------------------------------------------------------
+            # Column X
+            #
+            # =SUM(W[r-2]:W[r])/3
+            # ----------------------------------------------------------
+            #
+
+            decline_avg = _avg3(
+                "Decline"
+            )
+
+            df.iat[
+                row,
+                df.columns.get_loc(
+                    "Decline3DayAvg"
+                ),
+            ] = decline_avg
+
+            #
+            # ----------------------------------------------------------
+            # Column Y
+            #
+            # =High - Decline Average
+            # ----------------------------------------------------------
+            #
+
+            yesterday_high_minus_average = (
+                high
+                - decline_avg
+            )
+
+            df.iat[
+                row,
+                df.columns.get_loc(
+                    "YesterdayHighMinusAverage"
+                ),
+            ] = yesterday_high_minus_average
+
+            #
+            # ----------------------------------------------------------
+            # Column AA
+            #
+            # =Previous Low - Current Low
+            #
+            # Excel:
+            #
+            # AA5 = D4 - D5
+            # ----------------------------------------------------------
+            #
+
+            buying_low = (
+                previous_low
+                - low
+            )
+
+            df.iat[
+                row,
+                df.columns.get_loc(
+                    "BuyingLow"
+                ),
+            ] = buying_low
+
+            #
+            # ----------------------------------------------------------
+            # Column AB
+            #
+            # =SUM(AA[r-2]:AA[r])/3
+            # ----------------------------------------------------------
+            #
+
+            buying_low_avg = _avg3(
+                "BuyingLow"
+            )
+
+            df.iat[
+                row,
+                df.columns.get_loc(
+                    "BuyingLow3DayAvg"
+                ),
+            ] = buying_low_avg
+
+            #
+            # ----------------------------------------------------------
+            # Column AC
+            #
+            # =Low - Buying Low Average
+            # ----------------------------------------------------------
+            #
+
+            yesterday_low_minus_average = (
+                low
+                - buying_low_avg
+            )
+
+            df.iat[
+                row,
+                df.columns.get_loc(
+                    "YesterdayLowMinusAverage"
+                ),
+            ] = yesterday_low_minus_average
+
+            #
+            # ----------------------------------------------------------
+            # Column AE
+            #
+            # =Today's Low
+            # ----------------------------------------------------------
+            #
+
+            df.iat[
+                row,
+                df.columns.get_loc(
+                    "TodaysLow"
+                ),
+            ] = low
+
+            #
+            # ----------------------------------------------------------
+            # Column AG
+            #
+            # =2*Pivot-High
+            # ----------------------------------------------------------
+            #
+
+            breakout_low = (
+                (2.0 * pivot)
+                - high
+            )
+
+            df.iat[
+                row,
+                df.columns.get_loc(
+                    "TomorrowBreakoutLow"
+                ),
+            ] = breakout_low
+
+            #
+            # ----------------------------------------------------------
+            # Column AI
+            #
+            # =AVERAGE(AG,AE,AC,Y)
+            # ----------------------------------------------------------
+            #
+
+            average_buy = (
+                breakout_low
+                + low
+                + yesterday_low_minus_average
+                + yesterday_high_minus_average
+            ) / 4.0
+
+            df.iat[
+                row,
+                df.columns.get_loc(
+                    "AverageBuy"
+                ),
+            ] = average_buy
+
+            #
+            # Excel alias
+            #
+            # G = AI
+            #
+
+            df.iat[
+                row,
+                df.columns.get_loc(
+                    "LOW"
+                ),
+            ] = average_buy
+
+        #
+        # ==============================================================
+        # Workbook complete
+        # ==============================================================
+        #
+
+        return df
+
+    # ------------------------------------------------------------------
+    # Latest calculated Taylor levels
+    # ------------------------------------------------------------------
+
+    def latest(
+        self,
+        dataframe: pd.DataFrame,
+    ) -> TaylorLevels:
+
+        calculated = self.calculate(
+            dataframe
         )
 
-        # M
-        out["BuyingHigh"] = out["High"] - prev_open
-
-        # N
-        out["BuyingHighAvg3"] = (
-            out["BuyingHigh"].rolling(3).mean()
-        )
-
-        # O
-        out["AnticipatedHighFromHigh"] = (
-            out["High"] + out["BuyingHighAvg3"]
-        )
-
-        # Q
-        out["TodayHigh"] = out["High"]
-
-        # S
-        out["PivotBreakoutHigh"] = (
-            2 * ((out["High"] + out["Low"] + out["Close"]) / 3)
-            - out["Low"]
-        )
-
-        # U
-        out["AvgSell"] = (
-            out[
-                [
-                    "PivotBreakoutHigh",
-                    "TodayHigh",
-                    "AnticipatedHighFromHigh",
-                    "AnticipatedHighFromLow",
-                ]
-            ]
-            .mean(axis=1)
-        )
-
-        # W
-        out["Decline"] = prev_high - out["Low"]
-
-        # X
-        out["DeclineAvg3"] = (
-            out["Decline"].rolling(3).mean()
-        )
-
-        # Y
-        out["YesterdayHighMinusAvg"] = (
-            out["High"] - out["DeclineAvg3"]
-        )
-
-        # AA
-        out["BuyingLow"] = prev_low - out["Low"]
-
-        # AB
-        out["BuyingLowAvg3"] = (
-            out["BuyingLow"].rolling(3).mean()
-        )
-
-        # AC
-        out["YesterdayLowMinusAvg"] = (
-            out["Low"] - out["BuyingLowAvg3"]
-        )
-
-        # AE
-        out["TodayLow"] = out["Low"]
-
-        # AG
-        out["PivotBreakoutLow"] = (
-            2 * ((out["High"] + out["Low"] + out["Close"]) / 3)
-            - out["High"]
-        )
-
-        # AI
-        out["AvgBuy"] = (
-            out[
-                [
-                    "PivotBreakoutLow",
-                    "TodayLow",
-                    "YesterdayLowMinusAvg",
-                    "YesterdayHighMinusAvg",
-                ]
-            ]
-            .mean(axis=1)
-        )
-
-        return out
-
-    def latest(self, df: pd.DataFrame) -> TaylorLevels:
-
-        calc = self.calculate(df)
-        row = calc.iloc[-1]
+        row = calculated.iloc[-1]
 
         return TaylorLevels(
-            date=calc.index[-1],
 
-            open=float(row["Open"]),
-            high=float(row["High"]),
-            low=float(row["Low"]),
-            close=float(row["Close"]),
-
-            rally=self._num(row["Rally"]),
-            rally_avg=self._num(row["RallyAvg3"]),
-            anticipated_high_from_low=self._num(
-                row["AnticipatedHighFromLow"]
+            average_buy=float(
+                row["AverageBuy"]
             ),
 
-            buying_high=self._num(row["BuyingHigh"]),
-            buying_high_avg=self._num(row["BuyingHighAvg3"]),
-            anticipated_high_from_high=self._num(
-                row["AnticipatedHighFromHigh"]
+            average_sell=float(
+                row["AverageSell"]
             ),
 
-            pivot_breakout_high=self._num(
-                row["PivotBreakoutHigh"]
-            ),
-            avg_sell=self._num(row["AvgSell"]),
-
-            decline=self._num(row["Decline"]),
-            decline_avg=self._num(row["DeclineAvg3"]),
-            yesterday_high_minus_avg=self._num(
-                row["YesterdayHighMinusAvg"]
+            breakout_high=float(
+                row["TomorrowBreakoutHigh"]
             ),
 
-            buying_low=self._num(row["BuyingLow"]),
-            buying_low_avg=self._num(row["BuyingLowAvg3"]),
-            yesterday_low_minus_avg=self._num(
-                row["YesterdayLowMinusAvg"]
+            breakout_low=float(
+                row["TomorrowBreakoutLow"]
             ),
 
-            pivot_breakout_low=self._num(
-                row["PivotBreakoutLow"]
+            anticipated_high_from_low=float(
+                row[
+                    "TomorrowAnticipatedHighFromLow"
+                ]
             ),
-            avg_buy=self._num(row["AvgBuy"]),
+
+            anticipated_high_from_high=float(
+                row[
+                    "TomorrowAnticipatedHighFromHigh"
+                ]
+            ),
+
+            yesterday_high_minus_average=float(
+                row[
+                    "YesterdayHighMinusAverage"
+                ]
+            ),
+
+            yesterday_low_minus_average=float(
+                row[
+                    "YesterdayLowMinusAverage"
+                ]
+            ),
         )
-
-    @staticmethod
-    def _num(value):
-
-        if pd.isna(value):
-            return None
-
-        if isinstance(value, (np.floating, np.integer)):
-            return float(value)
-
-        return float(value)
+        
