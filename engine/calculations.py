@@ -5,101 +5,95 @@ def calculate(df: pd.DataFrame) -> pd.DataFrame:
 
     df = df.copy()
 
-    # ==========================================================
-    # Previous Day Values
-    # ==========================================================
-
+    # Previous Day
     df["Prev_Open"] = df["Open"].shift(1)
     df["Prev_High"] = df["High"].shift(1)
     df["Prev_Low"] = df["Low"].shift(1)
     df["Prev_Close"] = df["Close"].shift(1)
 
-    # ==========================================================
-    # SELL ENVELOPE
-    # ==========================================================
+    #
+    # SELL SIDE
+    #
 
-    # Rally
+    # I
     df["Rally"] = df["High"] - df["Prev_Low"]
 
-    # 3 Day Average Rally
+    # J
     df["Avg_Rally"] = df["Rally"].rolling(3).mean()
 
-    # Tomorrow Anticipated High
+    # K
     df["Projected_High_1"] = df["Low"] + df["Avg_Rally"]
 
-    # Buying High
+    # M
     df["Buying_High"] = df["High"] - df["Prev_Open"]
 
-    # 3 Day Average Buying High
+    # N
     df["Avg_Buying_High"] = df["Buying_High"].rolling(3).mean()
 
-    # Tomorrow Anticipated High
+    # O
     df["Projected_High_2"] = df["High"] + df["Avg_Buying_High"]
 
-    # Today's High
+    # Q
     df["Today_High"] = df["High"]
 
-    # LSS Breakout Buy Number
+    # S
     df["Breakout_Buy"] = (
         2 * ((df["High"] + df["Low"] + df["Close"]) / 3)
         - df["Low"]
     )
 
-    # Average Sell Number
+    # U
     df["Average_Sell"] = (
-        df["Breakout_Buy"]
-        + df["Today_High"]
+        df["Projected_High_1"]
         + df["Projected_High_2"]
-        + df["Projected_High_1"]
+        + df["Today_High"]
+        + df["Breakout_Buy"]
     ) / 4
 
-    # ==========================================================
-    # BUY ENVELOPE
-    # ==========================================================
+    #
+    # BUY SIDE
+    #
 
-    # Decline
+    # W
     df["Decline"] = df["Prev_High"] - df["Low"]
 
-    # 3 Day Average Decline
+    # X
     df["Avg_Decline"] = df["Decline"].rolling(3).mean()
 
-    # Yesterday High - Avg Decline
+    # Y
     df["Projected_Low_1"] = df["High"] - df["Avg_Decline"]
 
-    # Buying Low
+    # AA
     df["Buying_Low"] = df["Prev_Low"] - df["Low"]
 
-    # 3 Day Average Buying Low
+    # AB
     df["Avg_Buying_Low"] = df["Buying_Low"].rolling(3).mean()
 
-    # Yesterday Low - Avg Buying Low
+    # AC
     df["Projected_Low_2"] = df["Low"] - df["Avg_Buying_Low"]
 
-    # Today's Low
+    # AE
     df["Today_Low"] = df["Low"]
 
-    # LSS Breakout Sell Number
+    # AG
     df["Breakout_Sell"] = (
         2 * ((df["High"] + df["Low"] + df["Close"]) / 3)
         - df["High"]
     )
 
-    # Average Buy Number
+    # AI
     df["Average_Buy"] = (
-        df["Breakout_Sell"]
-        + df["Today_Low"]
+        df["Projected_Low_1"]
         + df["Projected_Low_2"]
-        + df["Projected_Low_1"]
+        + df["Today_Low"]
+        + df["Breakout_Sell"]
     ) / 4
 
-    # ==========================================================
     # Pivot
-    # ==========================================================
-
     df["Pivot"] = (
-        df["High"]
-        + df["Low"]
-        + df["Close"]
+        df["High"] +
+        df["Low"] +
+        df["Close"]
     ) / 3
 
     return df
