@@ -555,6 +555,50 @@ class TaylorCalculator:
                 r,
                 "LOW",
             ] = average_buy
+                def latest(
+        self,
+        dataframe: pd.DataFrame,
+    ) -> TaylorLevels:
+
+        df = self.calculate(dataframe)
+
+        row = df.iloc[-1]
+
+        return TaylorLevels(
+
+            average_buy=float(
+                row["AverageBuy"]
+            ),
+
+            average_sell=float(
+                row["AverageSell"]
+            ),
+
+            breakout_high=float(
+                row["TomorrowBreakoutHigh"]
+            ),
+
+            breakout_low=float(
+                row["TomorrowBreakoutLow"]
+            ),
+
+            anticipated_high_from_low=float(
+                row["TomorrowAnticipatedHighFromLow"]
+            ),
+
+            anticipated_high_from_high=float(
+                row["TomorrowAnticipatedHighFromHigh"]
+            ),
+
+            yesterday_high_minus_average=float(
+                row["YesterdayHighMinusAverage"]
+            ),
+
+            yesterday_low_minus_average=float(
+                row["YesterdayLowMinusAverage"]
+            ),
+
+        )
 
         return df
         
