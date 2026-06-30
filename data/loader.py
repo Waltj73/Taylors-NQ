@@ -2,10 +2,11 @@
 Taylor Workstation
 Data Loader
 
-Version: 0.1
+Version: 0.2
 """
 
 from pathlib import Path
+
 import pandas as pd
 import yfinance as yf
 
@@ -16,14 +17,14 @@ class DataLoader:
         pass
 
     # ---------------------------------------------------------
-    # Download from Yahoo Finance
+    # Download Daily Data
     # ---------------------------------------------------------
 
     def from_yahoo(
         self,
-        symbol: str = "NQ=F",
-        period: str = "5y",
-        interval: str = "1d"
+        symbol="NQ=F",
+        period="5y",
+        interval="1d"
     ) -> pd.DataFrame:
 
         df = yf.download(
@@ -31,22 +32,45 @@ class DataLoader:
             period=period,
             interval=interval,
             auto_adjust=False,
-            progress=False
+            progress=False,
+            group_by="column",
+            multi_level_index=False,
         )
 
         if df.empty:
             raise ValueError(f"No data returned for {symbol}")
 
-        df.reset_index(inplace=True)
+        # Flatten MultiIndex if Yahoo returns one
+        if isinstance(df.columns, pd.MultiIndex):
+            df.columns = df.columns.get_level_values(0)
 
-        df = df[[
+        df = df.reset_index()
+
+        # Keep only the columns we need
+        required = [
             "Date",
             "Open",
             "High",
             "Low",
             "Close",
-            "Volume"
-        ]]
+            "Volume",
+        ]
+
+        df = df[required]
+
+        # Make sure numeric columns are numeric
+        numeric_cols = [
+            "Open",
+            "High",
+            "Low",
+            "Close",
+            "Volume",
+        ]
+
+        for col in numeric_cols:
+            df[col] = pd.to_numeric(df[col], errors="coerce")
+
+        df = df.dropna()
 
         return df
 
@@ -54,35 +78,26 @@ class DataLoader:
     # Load CSV
     # ---------------------------------------------------------
 
-    def from_csv(
-        self,
-        filename
-    ) -> pd.DataFrame:
+    def from_csv(self, filename):
 
         filename = Path(filename)
 
         if not filename.exists():
             raise FileNotFoundError(filename)
 
-        df = pd.read_csv(filename)
-
-        return df
+        return pd.read_csv(filename)
 
     # ---------------------------------------------------------
     # Save CSV
     # ---------------------------------------------------------
 
-    def save_csv(
-        self,
-        df,
-        filename
-    ):
+    def save_csv(self, df, filename):
 
         filename = Path(filename)
 
         df.to_csv(
             filename,
-            index=False
+            index=False,
         )
 
     # ---------------------------------------------------------
@@ -102,5 +117,5 @@ class DataLoader:
 
         return pd.read_excel(
             filename,
-            sheet_name=sheet_name
+            sheet_name=sheet_name,
         )
