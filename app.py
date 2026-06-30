@@ -194,6 +194,8 @@ st.divider()
 if page == "Dashboard":
 
     latest = state.calculations.iloc[-1]
+    st.write(latest.index.tolist())
+st.stop()
 
     st.title("Taylor NQ Dashboard")
 
