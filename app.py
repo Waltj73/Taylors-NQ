@@ -194,104 +194,75 @@ st.divider()
 if page == "Dashboard":
 
     latest = state.calculations.iloc[-1]
-    st.write(latest.index.tolist())
-st.stop()
 
-    st.title("Taylor NQ Dashboard")
+    metric1, metric2, metric3, metric4 = st.columns(4)
 
-    c1, c2, c3, c4 = st.columns(4)
+    with metric1:
+        st.metric(
+            "Current Price",
+            f"{latest['Close']:,.2f}",
+        )
 
-    c1.metric(
-        "Current Price",
-        f"{latest['Close']:,.2f}"
-    )
+    with metric2:
+        st.metric(
+            "Average Buy",
+            f"{latest['AverageBuy']:,.2f}",
+        )
 
-    c2.metric(
-        "Average Buy",
-        f"{latest['AverageBuy']:,.2f}"
-    )
+    with metric3:
+        st.metric(
+            "Average Sell",
+            f"{latest['AverageSell']:,.2f}",
+        )
 
-    c3.metric(
-        "Average Sell",
-        f"{latest['AverageSell']:,.2f}"
-    )
-
-    c4.metric(
-        "Today's Range",
-        f"{latest['High'] - latest['Low']:.2f}"
-    )
+    with metric4:
+        st.metric(
+            "Range",
+            f"{latest['High'] - latest['Low']:.2f}",
+        )
 
     st.divider()
 
-    left, right = st.columns([1, 1])
+    c1, c2 = st.columns(2)
 
-    with left:
+    with c1:
 
         st.subheader("Taylor Levels")
 
-        levels = pd.DataFrame({
-
-            "Description": [
-
-                "Buying High",
-                "Buying Low",
-                "Average Buy",
-
-                "Selling High",
-                "Selling Low",
-                "Average Sell",
-
-                "Breakout High",
-                "Breakout Low",
-
-                "Projected High",
-                "Projected Low"
-
-            ],
-
-            "Price": [
-
-                latest["BuyingHigh"],
-                latest["BuyingLow"],
-                latest["AverageBuy"],
-
-                latest["YesterdayHighMinusAvg"],
-                latest["YesterdayLowPlusAvg"],
-                latest["AverageSell"],
-
-                latest["TomorrowBreakoutHigh"],
-                latest["TomorrowBreakoutLow"],
-
-                latest["TomorrowAnticipatedHighFromHigh"],
-                latest["TomorrowAnticipatedLowFromLow"]
-
-            ]
-
-        })
+        levels = pd.DataFrame(
+            {
+                "Level": [
+                    "Average Buy",
+                    "Average Sell",
+                    "Breakout High",
+                    "Breakout Low",
+                    "Projected High (Low)",
+                    "Projected High (High)",
+                ],
+                "Price": [
+                    latest["AverageBuy"],
+                    latest["AverageSell"],
+                    latest["TomorrowBreakoutHigh"],
+                    latest["TomorrowBreakoutLow"],
+                    latest["TomorrowAnticipatedHighFromLow"],
+                    latest["TomorrowAnticipatedHighFromHigh"],
+                ],
+            }
+        )
 
         st.dataframe(
             levels,
+            use_container_width=True,
             hide_index=True,
-            use_container_width=True
         )
 
-    with right:
+    with c2:
 
-        st.subheader("Recent Price")
+        st.subheader("Price History")
 
-        chart = state.history.tail(60)
-
-        st.line_chart(chart["Close"])
-
-    st.divider()
-
-    st.subheader("Latest Calculation Row")
-
-    st.dataframe(
-        latest.to_frame().T,
-        hide_index=True,
-        use_container_width=True
-    )
+        st.line_chart(
+            state.history["Close"]
+        )
         # ----------------------------------------------------------
 # Trading Plan
 # ----------------------------------------------------------
