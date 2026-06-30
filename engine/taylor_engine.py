@@ -1,25 +1,53 @@
-"""
-Taylor Workstation
-Main Engine
-"""
+# engine/taylor_engine.py
+
+from __future__ import annotations
+
+import pandas as pd
 
 from engine.calculations import calculate
 from engine.models import TaylorLevels
 
 
 class TaylorEngine:
+    """
+    Taylor Trading Engine
 
-    def __init__(self, dataframe):
+    Input:
+        DataFrame containing
+
+        Date
+        Open
+        High
+        Low
+        Close
+
+    Output:
+        DataFrame with every Taylor calculation
+    """
+
+    def __init__(self, dataframe: pd.DataFrame):
+
+        if dataframe is None:
+            raise ValueError("No dataframe supplied.")
+
+        if dataframe.empty:
+            raise ValueError("Dataframe is empty.")
 
         self.df = dataframe.copy()
 
-    def calculate_all(self):
+    # ----------------------------------------------------
+    # Calculate every row
+    # ----------------------------------------------------
 
-        self.df = calculate(self.df)
+    def calculate_all(self) -> pd.DataFrame:
 
-        return self.df
+        return calculate(self.df)
 
-    def latest(self):
+    # ----------------------------------------------------
+    # Latest trading day only
+    # ----------------------------------------------------
+
+    def latest(self) -> TaylorLevels:
 
         df = calculate(self.df)
 
@@ -29,23 +57,40 @@ class TaylorEngine:
 
             date=str(row["Date"]),
 
-            open=row["Open"],
-            high=row["High"],
-            low=row["Low"],
-            close=row["Close"],
+            open=float(row["Open"]),
+            high=float(row["High"]),
+            low=float(row["Low"]),
+            close=float(row["Close"]),
 
-            projected_high_1=row["Projected_High_1"],
-            projected_high_2=row["Projected_High_2"],
+            projected_high_1=float(row["Projected_High_1"]),
+            projected_high_2=float(row["Projected_High_2"]),
 
-            projected_low_1=row["Projected_Low_1"],
-            projected_low_2=row["Projected_Low_2"],
+            projected_low_1=float(row["Projected_Low_1"]),
+            projected_low_2=float(row["Projected_Low_2"]),
 
-            breakout_buy=row["Breakout_Buy"],
-            breakout_sell=row["Breakout_Sell"],
+            average_sell=float(row["Average_Sell"]),
+            average_buy=float(row["Average_Buy"]),
 
-            average_buy=row["Average_Buy"],
-            average_sell=row["Average_Sell"],
+            breakout_buy=float(row["Breakout_Buy"]),
+            breakout_sell=float(row["Breakout_Sell"]),
 
-            pivot=row["Pivot"]
-
+            pivot=float(row["Pivot"]),
         )
+
+    # ----------------------------------------------------
+    # Latest dataframe row
+    # ----------------------------------------------------
+
+    def latest_row(self) -> pd.Series:
+
+        df = calculate(self.df)
+
+        return df.iloc[-1]
+
+    # ----------------------------------------------------
+    # Entire calculation history
+    # ----------------------------------------------------
+
+    def history(self) -> pd.DataFrame:
+
+        return calculate(self.df)
