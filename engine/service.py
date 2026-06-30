@@ -1,15 +1,5 @@
 # engine/service.py
 
-"""
-Taylor NQ Service Layer
-
-Central application service used by the UI. Handles loading,
-refreshing, verification, and exposes a single object to the
-presentation layer.
-
-No Streamlit code.
-"""
-
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -17,24 +7,19 @@ from dataclasses import dataclass
 import pandas as pd
 
 from config import config
-from .loader import Loader
-from .verify import WorkbookVerifier
+
+from engine.calculations import TaylorCalculator
+from engine.data import YahooData
+from engine.workbook import TaylorWorkbook
+from engine.verify import WorkbookVerifier
 
 
 @dataclass(slots=True)
-class ServiceResult:
+class TaylorState:
 
     history: pd.DataFrame
 
     calculations: pd.DataFrame
-
-    levels: object
-
-    signal: object
-
-    quote: object
-
-    session: object
 
     workbook: pd.DataFrame | None
 
@@ -47,44 +32,70 @@ class TaylorService:
 
     def __init__(self):
 
-        self.loader = Loader()
+        self.market = YahooData(
+            config.SYMBOL
+        )
+
+        self.calculator = TaylorCalculator()
 
         self.verifier = WorkbookVerifier()
 
-    def refresh(self) -> ServiceResult:
+    def refresh(self):
 
-        data = self.loader.load()
+        #
+        # Download latest market history.
+        #
 
+        history = self.market.latest(
+            bars=250,
+            interval=config.HISTORY_INTERVAL,
+        )
+
+        #
+        # Perform workbook calculations.
+        #
+
+        calculations = self.calculator.calculate(
+            history
+        )
+
+        workbook = None
         verification = None
         summary = None
 
-        if data.workbook is not None:
+        try:
 
-            try:
+            workbook = TaylorWorkbook(
+                config.EXCEL_WORKBOOK
+            ).first_sheet()
 
-                verification = self.verifier.verify_last_row(
-                    workbook=data.workbook,
-                    calculated=data.calculations,
+            verification = (
+                self.verifier.verify_last_row(
+                    workbook,
+                    calculations,
                 )
+            )
 
-                summary = self.verifier.summary(
-                    workbook=data.workbook,
-                    calculated=data.calculations,
+            summary = (
+                self.verifier.summary(
+                    workbook,
+                    calculations,
                 )
+            )
 
-            except Exception:
+        except Exception:
 
-                verification = None
-                summary = None
+            pass
 
-        return ServiceResult(
-            history=data.history,
-            calculations=data.calculations,
-            levels=data.levels,
-            signal=data.signal,
-            quote=data.quote,
-            session=data.session,
-            workbook=data.workbook,
+        return TaylorState(
+
+            history=history,
+
+            calculations=calculations,
+
+            workbook=workbook,
+
             verification=verification,
+
             summary=summary,
         )
