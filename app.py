@@ -26,7 +26,7 @@ from ui.help_panel import HelpPanel
 
 st.set_page_config(
     page_title="Taylor NQ",
-    page_icon="📈",
+    page_icon="ðŸ“ˆ",
     layout="wide",
     initial_sidebar_state="expanded",
 )
@@ -256,7 +256,7 @@ if page == "Dashboard":
             hide_index=True,
         )
 
-       with c2:
+    with c2:
 
         st.subheader("Price History")
 
