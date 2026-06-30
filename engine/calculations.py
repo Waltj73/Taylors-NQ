@@ -68,100 +68,108 @@ class TaylorCalculator:
         df.at[first, "BuyingHigh"] = 0.0
         df.at[first, "BuyingHigh3DayAvg"] = 0.0
 
-        for i in range(1, len(df)):
+        for i in range(4, len(df)):
 
-            r = df.index[i]
-            p = df.index[i - 1]
+    r = df.index[i]
+    p = df.index[i - 1]
 
-            O = df.at[r, "Open"]
-            H = df.at[r, "High"]
-            L = df.at[r, "Low"]
-            C = df.at[r, "Close"]
+    O = df.at[r, "Open"]
+    H = df.at[r, "High"]
+    L = df.at[r, "Low"]
+    C = df.at[r, "Close"]
 
-            prevO = df.at[p, "Open"]
-            prevH = df.at[p, "High"]
-            prevL = df.at[p, "Low"]
+    prevO = df.at[p, "Open"]
+    prevH = df.at[p, "High"]
+    prevL = df.at[p, "Low"]
 
-            # -------------------
-            # Rally
-            # -------------------
-            rally = H - prevL
-            df.at[r, "Rally"] = rally
+    # -------------------------
+    # Rally
+    # -------------------------
+    rally = H - prevL
+    df.at[r, "Rally"] = rally
 
-            r1 = df.at[df.index[i-1], "Rally"] if i >= 1 else 0
-            r2 = df.at[df.index[i-2], "Rally"] if i >= 2 else 0
-            rally_avg = (r1 + r2 + rally) / 3
+    r1 = df.at[df.index[i-1], "Rally"]
+    r2 = df.at[df.index[i-2], "Rally"]
+    r3 = df.at[df.index[i-3], "Rally"]
 
-            df.at[r, "Rally3DayAvg"] = rally_avg
-            df.at[r, "TomorrowAnticipatedHighFromLow"] = L + rally_avg
+    rally_avg = (r1 + r2 + r3) / 3
+    df.at[r, "Rally3DayAvg"] = rally_avg
 
-            # -------------------
-            # Buying High
-            # -------------------
-            bh = H - prevO
-            df.at[r, "BuyingHigh"] = bh
+    df.at[r, "TomorrowAnticipatedHighFromLow"] = L + rally_avg
 
-            bh1 = df.at[df.index[i-1], "BuyingHigh"] if i >= 1 else 0
-            bh2 = df.at[df.index[i-2], "BuyingHigh"] if i >= 2 else 0
-            bh_avg = (bh1 + bh2 + bh) / 3
+    # -------------------------
+    # Buying High
+    # -------------------------
+    bh = H - prevO
+    df.at[r, "BuyingHigh"] = bh
 
-            df.at[r, "BuyingHigh3DayAvg"] = bh_avg
-            df.at[r, "TomorrowAnticipatedHighFromHigh"] = H + bh_avg
+    bh1 = df.at[df.index[i-1], "BuyingHigh"]
+    bh2 = df.at[df.index[i-2], "BuyingHigh"]
+    bh3 = df.at[df.index[i-3], "BuyingHigh"]
 
-            df.at[r, "TodaysHigh"] = H
+    bh_avg = (bh1 + bh2 + bh3) / 3
+    df.at[r, "BuyingHigh3DayAvg"] = bh_avg
 
-            # -------------------
-            # Pivot / Breakout
-            # -------------------
-            pivot = (H + L + C) / 3
-            df.at[r, "TomorrowBreakoutHigh"] = (2 * pivot) - L
+    df.at[r, "TomorrowAnticipatedHighFromHigh"] = H + bh_avg
+    df.at[r, "TodaysHigh"] = H
 
-            df.at[r, "AverageSell"] = (
-                df.at[r, "TomorrowBreakoutHigh"]
-                + H
-                + df.at[r, "TomorrowAnticipatedHighFromHigh"]
-                + df.at[r, "TomorrowAnticipatedHighFromLow"]
-            ) / 4
+    # -------------------------
+    # Pivot
+    # -------------------------
+    pivot = (H + L + C) / 3
 
-            df.at[r, "HIGH"] = df.at[r, "AverageSell"]
+    df.at[r, "TomorrowBreakoutHigh"] = (2 * pivot) - L
 
-            # -------------------
-            # Decline
-            # -------------------
-            decline = prevH - L
-            df.at[r, "Decline"] = decline
+    df.at[r, "AverageSell"] = (
+        df.at[r, "TomorrowBreakoutHigh"]
+        + H
+        + df.at[r, "TomorrowAnticipatedHighFromHigh"]
+        + df.at[r, "TomorrowAnticipatedHighFromLow"]
+    ) / 4
 
-            d1 = df.at[df.index[i-1], "Decline"] if i >= 1 else SEED_DECLINE
-            d2 = df.at[df.index[i-2], "Decline"] if i >= 2 else SEED_DECLINE
-            d_avg = (d1 + d2 + decline) / 3
+    df.at[r, "HIGH"] = df.at[r, "AverageSell"]
 
-            df.at[r, "Decline3DayAvg"] = d_avg
-            df.at[r, "YesterdayHighMinusAverage"] = H - d_avg
+    # -------------------------
+    # Decline
+    # -------------------------
+    decline = prevH - L
+    df.at[r, "Decline"] = decline
 
-            # -------------------
-            # Buying Low
-            # -------------------
-            bl = prevL - L
-            df.at[r, "BuyingLow"] = bl
+    d1 = df.at[df.index[i-1], "Decline"]
+    d2 = df.at[df.index[i-2], "Decline"]
+    d3 = df.at[df.index[i-3], "Decline"]
 
-            bl1 = df.at[df.index[i-1], "BuyingLow"] if i >= 1 else SEED_BUYING_LOW
-            bl2 = df.at[df.index[i-2], "BuyingLow"] if i >= 2 else SEED_BUYING_LOW
-            bl_avg = (bl1 + bl2 + bl) / 3
+    d_avg = (d1 + d2 + d3) / 3
+    df.at[r, "Decline3DayAvg"] = d_avg
 
-            df.at[r, "BuyingLow3DayAvg"] = bl_avg
-            df.at[r, "YesterdayLowMinusAverage"] = L - bl_avg
+    df.at[r, "YesterdayHighMinusAverage"] = H - d_avg
 
-            df.at[r, "TodaysLow"] = L
-            df.at[r, "TomorrowBreakoutLow"] = (2 * pivot) - H
+    # -------------------------
+    # Buying Low
+    # -------------------------
+    bl = prevL - L
+    df.at[r, "BuyingLow"] = bl
 
-            df.at[r, "AverageBuy"] = (
-                df.at[r, "TomorrowBreakoutLow"]
-                + L
-                + df.at[r, "YesterdayLowMinusAverage"]
-                + df.at[r, "YesterdayHighMinusAverage"]
-            ) / 4
+    bl1 = df.at[df.index[i-1], "BuyingLow"]
+    bl2 = df.at[df.index[i-2], "BuyingLow"]
+    bl3 = df.at[df.index[i-3], "BuyingLow"]
 
-            df.at[r, "LOW"] = df.at[r, "AverageBuy"]
+    bl_avg = (bl1 + bl2 + bl3) / 3
+    df.at[r, "BuyingLow3DayAvg"] = bl_avg
+
+    df.at[r, "YesterdayLowMinusAverage"] = L - bl_avg
+    df.at[r, "TodaysLow"] = L
+
+    df.at[r, "TomorrowBreakoutLow"] = (2 * pivot) - H
+
+    df.at[r, "AverageBuy"] = (
+        df.at[r, "TomorrowBreakoutLow"]
+        + L
+        + df.at[r, "YesterdayLowMinusAverage"]
+        + df.at[r, "YesterdayHighMinusAverage"]
+    ) / 4
+
+    df.at[r, "LOW"] = df.at[r, "AverageBuy"]
 
         return df
 
