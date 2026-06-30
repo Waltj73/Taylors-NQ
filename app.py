@@ -191,124 +191,94 @@ st.divider()
 # Dashboard
 # ----------------------------------------------------------
 
+# ----------------------------------------------------------
+# Dashboard
+# ----------------------------------------------------------
+
 if page == "Dashboard":
 
-    
     latest = state.calculations.iloc[-1]
-    metric1, metric2, metric3, metric4 = st.columns(4)
 
-    with metric1:
+    st.subheader("Today's Market")
 
+    m1, m2, m3, m4 = st.columns(4)
+
+    with m1:
         st.metric(
-
             "Current Price",
-
             f"{latest['Close']:,.2f}",
-
         )
 
-    with metric2:
-
+    with m2:
         st.metric(
-
             "Average Buy",
-
             f"{latest['AverageBuy']:,.2f}",
-
         )
 
-    with metric3:
-
+    with m3:
         st.metric(
-
             "Average Sell",
-
             f"{latest['AverageSell']:,.2f}",
-
         )
 
-    with metric4:
-
+    with m4:
         st.metric(
-
-            "Range",
-
-            f"{latest['High']-latest['Low']:.2f}",
-
+            "Today's Range",
+            f"{latest['High'] - latest['Low']:.2f}",
         )
 
     st.divider()
 
-    c1, c2 = st.columns(2)
+    left, right = st.columns([1, 1])
 
-    with c1:
+    with left:
 
         st.subheader("Taylor Levels")
 
         levels = pd.DataFrame(
-
             {
-
                 "Level": [
-
                     "Average Buy",
-
                     "Average Sell",
-
                     "Breakout High",
-
                     "Breakout Low",
-
-                    "Projected High (Low)",
-
-                    "Projected High (High)",
-
+                    "Projected High",
+                    "Projected Low",
                 ],
-
                 "Price": [
-
                     latest["AverageBuy"],
-
                     latest["AverageSell"],
-
                     latest["TomorrowBreakoutHigh"],
-
                     latest["TomorrowBreakoutLow"],
-
-                    latest["TomorrowAnticipatedHighFromLow"],
-
                     latest["TomorrowAnticipatedHighFromHigh"],
-
+                    latest["TomorrowAnticipatedHighFromLow"],
                 ],
-
             }
-
         )
 
         st.dataframe(
-
             levels,
-
             use_container_width=True,
-
             hide_index=True,
-
         )
 
-    with c2:
+    with right:
 
-        st.subheader("Price History")
+        st.subheader("Closing Price")
 
-        chart = state.history[
-            [
+        st.line_chart(
+            state.history["Close"]
+        )
 
-                "Close",
+    st.divider()
 
-            ]
+    st.subheader("Latest Taylor Worksheet Row")
 
-        ]
-
-        st.line_chart(chart)
+    st.dataframe(
+        latest.to_frame().T,
+        use_container_width=True,
+        hide_index=True,
+    )
         # ----------------------------------------------------------
 # Trading Plan
 # ----------------------------------------------------------
