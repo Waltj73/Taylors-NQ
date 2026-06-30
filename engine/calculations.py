@@ -6,7 +6,7 @@ import numpy as np
 
 
 # =========================================================
-# OUTPUT STRUCTURE (REQUIRED BY APP + SERVICE)
+# OUTPUT STRUCTURE (MATCHES app.py)
 # =========================================================
 
 @dataclass
@@ -15,10 +15,13 @@ class TaylorLevels:
     AverageSell: float = 0.0
     BreakoutHigh: float = 0.0
     BreakoutLow: float = 0.0
+    BuyingHigh: float = 0.0
+    BuyingLow: float = 0.0
+    Decline: float = 0.0
 
 
 # =========================================================
-# MAIN ENGINE
+# CALCULATION ENGINE
 # =========================================================
 
 class TaylorCalculator:
@@ -26,22 +29,22 @@ class TaylorCalculator:
     def __init__(self):
         pass
 
-    # -----------------------------------------------------
-    # CORE CALCULATION ENGINE
-    # -----------------------------------------------------
-
     def calculate(self, df: pd.DataFrame) -> pd.DataFrame:
 
         df = df.copy()
-
         df = df.apply(pd.to_numeric, errors="coerce").fillna(0.0)
 
         required = ["Open", "High", "Low", "Close"]
         if any(c not in df.columns for c in required):
             raise ValueError("Missing OHLC columns")
 
-        # ensure required output columns exist
-        for col in ["AverageBuy", "AverageSell", "TomorrowBreakoutHigh", "TomorrowBreakoutLow"]:
+        # ensure all expected columns exist
+        for col in [
+            "AverageBuy", "AverageSell",
+            "BreakoutHigh", "BreakoutLow",
+            "BuyingHigh", "BuyingLow",
+            "Decline"
+        ]:
             if col not in df.columns:
                 df[col] = 0.0
 
@@ -49,7 +52,7 @@ class TaylorCalculator:
             return df
 
         # =====================================================
-        # LOOP (standard OHLC delta model)
+        # MAIN LOOP
         # =====================================================
 
         for i in range(1, len(df)):
@@ -65,44 +68,38 @@ class TaylorCalculator:
             prevL = df.at[p, "Low"]
             prevC = df.at[p, "Close"]
 
-            # -------------------------------------------------
-            # CORE STRUCTURE (clean Taylor cycle)
-            # -------------------------------------------------
+            # =================================================
+            # CORE TAYLOR VALUES
+            # =================================================
 
-            rally = H - prevL
-            decline = prevH - L
-            buying_high = H - prevH
-            buying_low = prevL - L
+            df.at[r, "BuyingHigh"] = H - prevH
+            df.at[r, "BuyingLow"] = prevL - L
+            df.at[r, "Decline"] = prevH - L
 
-            # rolling stability (simple 3-bar smoothing)
-            if i >= 3:
-                rally_avg = (
-                    (df.at[df.index[i-1], "High"] - df.at[df.index[i-2], "Low"])
-                    + rally
-                ) / 2
-            else:
-                rally_avg = rally
+            # =================================================
+            # PIVOT MODEL
+            # =================================================
 
             pivot = (H + L + C) / 3
 
             breakout_high = (2 * pivot) - L
             breakout_low = (2 * pivot) - H
 
-            # -------------------------------------------------
-            # FINAL OUTPUTS (stable, non-recursive)
-            # -------------------------------------------------
+            df.at[r, "BreakoutHigh"] = breakout_high
+            df.at[r, "BreakoutLow"] = breakout_low
+
+            # =================================================
+            # FINAL LEVELS (STABLE + SIMPLE)
+            # =================================================
 
             df.at[r, "AverageBuy"] = (breakout_low + L) / 2
             df.at[r, "AverageSell"] = (breakout_high + H) / 2
 
-            df.at[r, "TomorrowBreakoutHigh"] = breakout_high
-            df.at[r, "TomorrowBreakoutLow"] = breakout_low
-
         return df
 
-    # -----------------------------------------------------
-    # API OUTPUT FOR APP
-    # -----------------------------------------------------
+    # =========================================================
+    # SAFE OUTPUT FOR APP
+    # =========================================================
 
     def latest(self, df: pd.DataFrame) -> TaylorLevels:
 
@@ -112,6 +109,9 @@ class TaylorCalculator:
         return TaylorLevels(
             AverageBuy=float(r["AverageBuy"]),
             AverageSell=float(r["AverageSell"]),
-            BreakoutHigh=float(r["TomorrowBreakoutHigh"]),
-            BreakoutLow=float(r["TomorrowBreakoutLow"]),
+            BreakoutHigh=float(r["BreakoutHigh"]),
+            BreakoutLow=float(r["BreakoutLow"]),
+            BuyingHigh=float(r["BuyingHigh"]),
+            BuyingLow=float(r["BuyingLow"]),
+            Decline=float(r["Decline"]),
         )
