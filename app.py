@@ -192,7 +192,8 @@ st.divider()
 # ----------------------------------------------------------
 
 if page == "Dashboard":
-
+st.write(state.calculations.columns.tolist())
+st.stop()
     latest = state.calculations.iloc[-1]
 
     metric1, metric2, metric3, metric4 = st.columns(4)
