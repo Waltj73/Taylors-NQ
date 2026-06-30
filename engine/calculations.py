@@ -6,7 +6,7 @@ import numpy as np
 
 
 # =========================================================
-# REQUIRED FOR engine/__init__.py IMPORT
+# OUTPUT OBJECT (USED BY app.py)
 # =========================================================
 
 @dataclass
@@ -23,10 +23,13 @@ class TaylorLevels:
 
 
 # =========================================================
-# CALC ENGINE
+# MAIN ENGINE
 # =========================================================
 
 class TaylorCalculator:
+
+    def __init__(self):
+        pass
 
     def calculate(self, df: pd.DataFrame) -> pd.DataFrame:
 
@@ -37,12 +40,30 @@ class TaylorCalculator:
         if any(c not in df.columns for c in required):
             raise ValueError("Missing OHLC columns")
 
-        for c in TaylorLevels.__annotations__.keys():
+        # ensure all expected columns exist
+        cols = [
+            "Rally",
+            "Decline",
+            "BuyingHigh",
+            "BuyingLow",
+            "AverageBuy",
+            "AverageSell",
+            "TomorrowBreakoutHigh",
+            "TomorrowBreakoutLow",
+            "TomorrowAnticipatedHighFromLow",
+            "TomorrowAnticipatedHighFromHigh",
+        ]
+
+        for c in cols:
             if c not in df.columns:
                 df[c] = 0.0
 
         if len(df) < 2:
             return df
+
+        # =====================================================
+        # LOOP
+        # =====================================================
 
         for i in range(1, len(df)):
 
@@ -56,34 +77,34 @@ class TaylorCalculator:
             prevH = df.at[p, "High"]
             prevL = df.at[p, "Low"]
 
-            # -------------------------
-            # CORE CYCLICAL VALUES
-            # -------------------------
+            # -------------------------------------------------
+            # CORE TAYLOR VALUES
+            # -------------------------------------------------
 
             df.at[r, "Rally"] = H - prevL
             df.at[r, "Decline"] = prevH - L
             df.at[r, "BuyingHigh"] = H - prevH
             df.at[r, "BuyingLow"] = prevL - L
 
-            # -------------------------
+            # -------------------------------------------------
             # PIVOT MODEL
-            # -------------------------
+            # -------------------------------------------------
 
             pivot = (H + L + C) / 3
 
             df.at[r, "TomorrowBreakoutHigh"] = (2 * pivot) - L
             df.at[r, "TomorrowBreakoutLow"] = (2 * pivot) - H
 
-            # -------------------------
-            # ENVELOPE
-            # -------------------------
+            # -------------------------------------------------
+            # SIMPLE ENVELOPE
+            # -------------------------------------------------
 
             df.at[r, "AverageBuy"] = (df.at[r, "TomorrowBreakoutLow"] + L) / 2
             df.at[r, "AverageSell"] = (df.at[r, "TomorrowBreakoutHigh"] + H) / 2
 
-            # -------------------------
-            # DERIVED (APP REQUIRED)
-            # -------------------------
+            # -------------------------------------------------
+            # DERIVED (APP SAFE)
+            # -------------------------------------------------
 
             df.at[r, "TomorrowAnticipatedHighFromLow"] = L + df.at[r, "Rally"]
             df.at[r, "TomorrowAnticipatedHighFromHigh"] = H + df.at[r, "BuyingHigh"]
