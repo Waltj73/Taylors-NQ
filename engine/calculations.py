@@ -26,26 +26,13 @@ class TaylorLevels:
 class TaylorCalculator:
 
     COLUMNS = [
-        "HIGH",
-        "LOW",
-        "Rally",
-        "Rally3DayAvg",
-        "TomorrowAnticipatedHighFromLow",
-        "BuyingHigh",
-        "BuyingHigh3DayAvg",
-        "TomorrowAnticipatedHighFromHigh",
-        "TodaysHigh",
-        "TomorrowBreakoutHigh",
-        "AverageSell",
-        "Decline",
-        "Decline3DayAvg",
-        "YesterdayHighMinusAverage",
-        "BuyingLow",
-        "BuyingLow3DayAvg",
-        "YesterdayLowMinusAverage",
-        "TodaysLow",
-        "TomorrowBreakoutLow",
-        "AverageBuy",
+        "HIGH", "LOW",
+        "Rally", "Rally3DayAvg", "TomorrowAnticipatedHighFromLow",
+        "BuyingHigh", "BuyingHigh3DayAvg", "TomorrowAnticipatedHighFromHigh",
+        "TodaysHigh", "TomorrowBreakoutHigh", "AverageSell",
+        "Decline", "Decline3DayAvg", "YesterdayHighMinusAverage",
+        "BuyingLow", "BuyingLow3DayAvg", "YesterdayLowMinusAverage",
+        "TodaysLow", "TomorrowBreakoutLow", "AverageBuy",
     ]
 
     def __init__(self):
@@ -55,74 +42,78 @@ class TaylorCalculator:
 
         df = dataframe.copy()
 
-        required = ["Open", "High", "Low", "Close"]
+        # FORCE NUMERIC (prevents Excel-style #VALUE propagation)
+        df = df.apply(pd.to_numeric, errors="coerce").fillna(0.0)
 
+        required = ["Open", "High", "Low", "Close"]
         missing = [c for c in required if c not in df.columns]
+
         if missing:
             raise ValueError(f"Missing required columns: {missing}")
 
         for col in self.COLUMNS:
             if col not in df.columns:
-                df[col] = np.nan
+                df[col] = 0.0
 
         if df.empty:
             return df
 
         first = df.index[0]
 
+        # SEEDS (CRITICAL FIX)
         df.at[first, "Decline"] = SEED_DECLINE
         df.at[first, "Decline3DayAvg"] = SEED_DECLINE_AVG
         df.at[first, "BuyingLow"] = SEED_BUYING_LOW
+        df.at[first, "BuyingLow3DayAvg"] = SEED_BUYING_LOW
+        df.at[first, "BuyingHigh"] = 0.0
+        df.at[first, "BuyingHigh3DayAvg"] = 0.0
 
         for i in range(1, len(df)):
 
             r = df.index[i]
             p = df.index[i - 1]
 
-            O = float(df.at[r, "Open"])
-            H = float(df.at[r, "High"])
-            L = float(df.at[r, "Low"])
-            C = float(df.at[r, "Close"])
+            O = df.at[r, "Open"]
+            H = df.at[r, "High"]
+            L = df.at[r, "Low"]
+            C = df.at[r, "Close"]
 
-            prevO = float(df.at[p, "Open"])
-            prevH = float(df.at[p, "High"])
-            prevL = float(df.at[p, "Low"])
+            prevO = df.at[p, "Open"]
+            prevH = df.at[p, "High"]
+            prevL = df.at[p, "Low"]
 
-            # -------------------------
+            # -------------------
             # Rally
-            # -------------------------
+            # -------------------
             rally = H - prevL
             df.at[r, "Rally"] = rally
 
-            # -------------------------
-            # Rally Avg
-            # -------------------------
-            prev_r1 = float(df.at[df.index[i-1], "Rally"]) if i >= 1 else 0
-            prev_r2 = float(df.at[df.index[i-2], "Rally"]) if i >= 2 else 0
-            rally_avg = (prev_r1 + prev_r2 + rally) / 3
-            df.at[r, "Rally3DayAvg"] = rally_avg
+            r1 = df.at[df.index[i-1], "Rally"] if i >= 1 else 0
+            r2 = df.at[df.index[i-2], "Rally"] if i >= 2 else 0
+            rally_avg = (r1 + r2 + rally) / 3
 
+            df.at[r, "Rally3DayAvg"] = rally_avg
             df.at[r, "TomorrowAnticipatedHighFromLow"] = L + rally_avg
 
-            # -------------------------
+            # -------------------
             # Buying High
-            # -------------------------
-            buying_high = H - prevO
-            df.at[r, "BuyingHigh"] = buying_high
+            # -------------------
+            bh = H - prevO
+            df.at[r, "BuyingHigh"] = bh
 
-            prev_bh1 = float(df.at[df.index[i-1], "BuyingHigh"]) if i >= 1 else 0
-            prev_bh2 = float(df.at[df.index[i-2], "BuyingHigh"]) if i >= 2 else 0
-            bh_avg = (prev_bh1 + prev_bh2 + buying_high) / 3
+            bh1 = df.at[df.index[i-1], "BuyingHigh"] if i >= 1 else 0
+            bh2 = df.at[df.index[i-2], "BuyingHigh"] if i >= 2 else 0
+            bh_avg = (bh1 + bh2 + bh) / 3
+
             df.at[r, "BuyingHigh3DayAvg"] = bh_avg
-
             df.at[r, "TomorrowAnticipatedHighFromHigh"] = H + bh_avg
+
             df.at[r, "TodaysHigh"] = H
 
-            # -------------------------
-            # Pivot
-            # -------------------------
+            # -------------------
+            # Pivot / Breakout
+            # -------------------
             pivot = (H + L + C) / 3
-
             df.at[r, "TomorrowBreakoutHigh"] = (2 * pivot) - L
 
             df.at[r, "AverageSell"] = (
@@ -134,33 +125,33 @@ class TaylorCalculator:
 
             df.at[r, "HIGH"] = df.at[r, "AverageSell"]
 
-            # -------------------------
+            # -------------------
             # Decline
-            # -------------------------
+            # -------------------
             decline = prevH - L
             df.at[r, "Decline"] = decline
 
-            prev_d1 = float(df.at[df.index[i-1], "Decline"]) if i >= 1 else SEED_DECLINE
-            prev_d2 = float(df.at[df.index[i-2], "Decline"]) if i >= 2 else SEED_DECLINE
-            d_avg = (prev_d1 + prev_d2 + decline) / 3
-            df.at[r, "Decline3DayAvg"] = d_avg
+            d1 = df.at[df.index[i-1], "Decline"] if i >= 1 else SEED_DECLINE
+            d2 = df.at[df.index[i-2], "Decline"] if i >= 2 else SEED_DECLINE
+            d_avg = (d1 + d2 + decline) / 3
 
+            df.at[r, "Decline3DayAvg"] = d_avg
             df.at[r, "YesterdayHighMinusAverage"] = H - d_avg
 
-            # -------------------------
+            # -------------------
             # Buying Low
-            # -------------------------
-            buying_low = prevL - L
-            df.at[r, "BuyingLow"] = buying_low
+            # -------------------
+            bl = prevL - L
+            df.at[r, "BuyingLow"] = bl
 
-            prev_bl1 = float(df.at[df.index[i-1], "BuyingLow"]) if i >= 1 else SEED_BUYING_LOW
-            prev_bl2 = float(df.at[df.index[i-2], "BuyingLow"]) if i >= 2 else SEED_BUYING_LOW
-            bl_avg = (prev_bl1 + prev_bl2 + buying_low) / 3
+            bl1 = df.at[df.index[i-1], "BuyingLow"] if i >= 1 else SEED_BUYING_LOW
+            bl2 = df.at[df.index[i-2], "BuyingLow"] if i >= 2 else SEED_BUYING_LOW
+            bl_avg = (bl1 + bl2 + bl) / 3
+
             df.at[r, "BuyingLow3DayAvg"] = bl_avg
-
             df.at[r, "YesterdayLowMinusAverage"] = L - bl_avg
-            df.at[r, "TodaysLow"] = L
 
+            df.at[r, "TodaysLow"] = L
             df.at[r, "TomorrowBreakoutLow"] = (2 * pivot) - H
 
             df.at[r, "AverageBuy"] = (
