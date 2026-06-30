@@ -1,5 +1,3 @@
-# app.py
-
 from __future__ import annotations
 
 import time
@@ -9,13 +7,8 @@ import pandas as pd
 import streamlit as st
 
 from config import config
-
 from engine.service import TaylorService
-
-from engine.calculations import TaylorCalculator
-
 from engine.version import version
-
 from ui.footer import Footer
 from ui.help_panel import HelpPanel
 
@@ -26,31 +19,30 @@ from ui.help_panel import HelpPanel
 
 st.set_page_config(
     page_title="Taylor NQ",
-    page_icon="ðŸ“ˆ",
+    page_icon="📈",
     layout="wide",
     initial_sidebar_state="expanded",
 )
+
 
 # ----------------------------------------------------------
 # Session State
 # ----------------------------------------------------------
 
 if "service" not in st.session_state:
-
     st.session_state.service = TaylorService()
 
 if "last_refresh" not in st.session_state:
-
     st.session_state.last_refresh = None
 
 if "auto_refresh" not in st.session_state:
-
     st.session_state.auto_refresh = True
 
 if "refresh_seconds" not in st.session_state:
-
     st.session_state.refresh_seconds = 30
 
+if "state" not in st.session_state:
+    st.session_state.state = None
 
 service = st.session_state.service
 
@@ -62,10 +54,7 @@ service = st.session_state.service
 with st.sidebar:
 
     st.title("Taylor NQ")
-
-    st.caption(
-        f"Version {version.VERSION}"
-    )
+    st.caption(f"Version {version.VERSION}")
 
     st.divider()
 
@@ -88,71 +77,50 @@ with st.sidebar:
         "Refresh Now",
         use_container_width=True,
     ):
-
         st.session_state.last_refresh = None
-
         st.rerun()
 
     st.divider()
 
     page = st.radio(
-
         "Navigation",
-
         [
-
             "Dashboard",
-
-            "Workbook",
-
             "Trading Plan",
-
+            "Workbook",
             "Verification",
-
             "Raw Data",
-
             "Help",
-
         ],
-
     )
 
+
 # ----------------------------------------------------------
-# Auto Refresh
+# Refresh Data
 # ----------------------------------------------------------
 
 refresh_required = False
 
 if st.session_state.last_refresh is None:
-
     refresh_required = True
 
-else:
+elif st.session_state.auto_refresh:
 
     elapsed = (
         datetime.now()
         - st.session_state.last_refresh
     ).total_seconds()
 
-    if (
-        st.session_state.auto_refresh
-        and elapsed
-        >= st.session_state.refresh_seconds
-    ):
-
-        refresh_required = True
-
+    refresh_required = (
+        elapsed >= st.session_state.refresh_seconds
+    )
 
 if refresh_required:
 
-    with st.spinner(
-        "Loading market data..."
-    ):
-
+    with st.spinner("Loading market data..."):
         state = service.refresh()
 
     st.session_state.state = state
-
     st.session_state.last_refresh = datetime.now()
 
 else:
@@ -169,24 +137,17 @@ st.title("Taylor Trading Model")
 left, right = st.columns([3, 1])
 
 with left:
-
-    st.caption(
-        f"Symbol: {config.SYMBOL}"
-    )
+    st.caption(f"Symbol: {config.SYMBOL}")
 
 with right:
 
     if st.session_state.last_refresh:
-
         st.caption(
             "Last Refresh: "
-            + st.session_state.last_refresh.strftime(
-                "%H:%M:%S"
-            )
+            + st.session_state.last_refresh.strftime("%H:%M:%S")
         )
 
 st.divider()
-
 # ----------------------------------------------------------
 # Dashboard
 # ----------------------------------------------------------
@@ -195,57 +156,63 @@ if page == "Dashboard":
 
     latest = state.calculations.iloc[-1]
 
-    metric1, metric2, metric3, metric4 = st.columns(4)
+    st.subheader("Today's Market")
 
-    with metric1:
+    m1, m2, m3, m4 = st.columns(4)
+
+    with m1:
         st.metric(
             "Current Price",
             f"{latest['Close']:,.2f}",
         )
 
-    with metric2:
+    with m2:
         st.metric(
             "Average Buy",
             f"{latest['AverageBuy']:,.2f}",
         )
 
-    with metric3:
+    with m3:
         st.metric(
             "Average Sell",
             f"{latest['AverageSell']:,.2f}",
         )
 
-    with metric4:
+    with m4:
         st.metric(
-            "Range",
+            "Today's Range",
             f"{latest['High'] - latest['Low']:.2f}",
         )
 
     st.divider()
 
-    c1, c2 = st.columns(2)
+    left, right = st.columns([1, 1])
 
-    with c1:
+    with left:
 
         st.subheader("Taylor Levels")
 
         levels = pd.DataFrame(
             {
                 "Level": [
+                    "Buying High",
+                    "Buying Low",
                     "Average Buy",
                     "Average Sell",
                     "Breakout High",
                     "Breakout Low",
-                    "Projected High (Low)",
-                    "Projected High (High)",
+                    "Projected High",
+                    "Projected High (From Low)",
                 ],
-                "Price": [
+                "Value": [
+                    latest["BuyingHigh"],
+                    latest["BuyingLow"],
                     latest["AverageBuy"],
                     latest["AverageSell"],
                     latest["TomorrowBreakoutHigh"],
                     latest["TomorrowBreakoutLow"],
-                    latest["TomorrowAnticipatedHighFromLow"],
                     latest["TomorrowAnticipatedHighFromHigh"],
+                    latest["TomorrowAnticipatedHighFromLow"],
                 ],
             }
         )
@@ -256,40 +223,50 @@ if page == "Dashboard":
             hide_index=True,
         )
 
-    with c2:
+    with right:
 
-        st.subheader("Price History")
+        st.subheader("Recent Close")
 
-        st.line_chart(
-            state.history["Close"]
-        )
+        chart = state.history.tail(100)
+
+        st.line_chart(chart["Close"])
 
     st.divider()
 
-    st.subheader("Latest Calculation")
+    st.subheader("Latest Taylor Calculation")
 
     st.dataframe(
         latest.to_frame().T,
         use_container_width=True,
         hide_index=True,
     )
-        # ----------------------------------------------------------
+    # ----------------------------------------------------------
 # Trading Plan
 # ----------------------------------------------------------
 
 elif page == "Trading Plan":
 
-    st.subheader("Trading Plan")
-
     latest = state.calculations.iloc[-1]
 
-    left, right = st.columns(2)
+    st.subheader("Today's Taylor Trading Plan")
 
-    with left:
+    c1, c2 = st.columns(2)
+
+    with c1:
 
         st.metric(
             "Average Buy",
             f"{latest['AverageBuy']:,.2f}",
+        )
+
+        st.metric(
+            "Buying High",
+            f"{latest['BuyingHigh']:,.2f}",
+        )
+
+        st.metric(
+            "Buying Low",
+            f"{latest['BuyingLow']:,.2f}",
         )
 
         st.metric(
@@ -298,15 +275,25 @@ elif page == "Trading Plan":
         )
 
         st.metric(
-            "Projected High",
-            f"{latest['TomorrowAnticipatedHighFromHigh']:,.2f}",
+            "Yesterday Low Minus Avg",
+            f"{latest['YesterdayLowMinusAverage']:,.2f}",
         )
 
-    with right:
+    with c2:
 
         st.metric(
             "Average Sell",
             f"{latest['AverageSell']:,.2f}",
+        )
+
+        st.metric(
+            "Today's High",
+            f"{latest['TodaysHigh']:,.2f}",
+        )
+
+        st.metric(
+            "Today's Low",
+            f"{latest['TodaysLow']:,.2f}",
         )
 
         st.metric(
@@ -315,73 +302,61 @@ elif page == "Trading Plan":
         )
 
         st.metric(
-            "Projected From Low",
-            f"{latest['TomorrowAnticipatedHighFromLow']:,.2f}",
+            "Yesterday High Minus Avg",
+            f"{latest['YesterdayHighMinusAverage']:,.2f}",
         )
 
     st.divider()
 
-    plan = pd.DataFrame(
+    st.subheader("Projected Levels")
 
+    projections = pd.DataFrame(
         {
-
             "Description": [
-
+                "Tomorrow Anticipated High (From High)",
+                "Tomorrow Anticipated High (From Low)",
+                "Tomorrow Breakout High",
+                "Tomorrow Breakout Low",
                 "Average Buy",
-
                 "Average Sell",
-
-                "Breakout High",
-
-                "Breakout Low",
-
-                "Yesterday High Minus Avg",
-
-                "Yesterday Low Minus Avg",
-
             ],
-
             "Value": [
-
-                latest["AverageBuy"],
-
-                latest["AverageSell"],
-
+                latest["TomorrowAnticipatedHighFromHigh"],
+                latest["TomorrowAnticipatedHighFromLow"],
                 latest["TomorrowBreakoutHigh"],
-
                 latest["TomorrowBreakoutLow"],
-
-                latest["YesterdayHighMinusAverage"],
-
-                latest["YesterdayLowMinusAverage"],
-
+                latest["AverageBuy"],
+                latest["AverageSell"],
             ],
-
         }
-
     )
 
     st.dataframe(
-        plan,
+        projections,
         use_container_width=True,
         hide_index=True,
     )
 
-# ----------------------------------------------------------
-# Workbook Page
+    st.divider()
+
+    st.subheader("Latest Calculation Row")
+
+    st.dataframe(
+        latest.to_frame().T,
+        use_container_width=True,
+        hide_index=True,
+    )
+    # ----------------------------------------------------------
+# Workbook
 # ----------------------------------------------------------
 
 elif page == "Workbook":
 
-    st.subheader(
-        "Workbook Values"
-    )
+    st.subheader("Taylor Workbook")
 
     if state.workbook is None:
 
-        st.warning(
-            "Workbook could not be loaded."
-        )
+        st.error("Workbook could not be loaded.")
 
     else:
 
@@ -391,78 +366,58 @@ elif page == "Workbook":
             height=700,
         )
 
+
 # ----------------------------------------------------------
 # Verification
 # ----------------------------------------------------------
 
 elif page == "Verification":
 
-    st.subheader(
-        "Workbook Verification"
-    )
+    st.subheader("Workbook Verification")
 
     if state.summary is None:
 
-        st.warning(
-            "Verification unavailable."
-        )
+        st.warning("Verification unavailable.")
 
     else:
 
         a, b, c = st.columns(3)
 
-        with a:
+        a.metric(
+            "Cells",
+            state.summary["cells"],
+        )
 
-            st.metric(
-                "Cells",
-                state.summary["cells"],
-            )
+        b.metric(
+            "Matched",
+            state.summary["matched"],
+        )
 
-        with b:
-
-            st.metric(
-                "Matched",
-                state.summary["matched"],
-            )
-
-        with c:
-
-            st.metric(
-                "Accuracy",
-                f"{state.summary['accuracy']:.2f}%",
-            )
+        c.metric(
+            "Accuracy",
+            f"{state.summary['accuracy']:.2f}%"
+        )
 
         st.divider()
 
         if state.verification:
 
             verify = pd.DataFrame(
-
-                [
-
-                    vars(item)
-
-                    for item in state.verification
-
-                ]
-
+                [vars(x) for x in state.verification]
             )
 
             st.dataframe(
-
                 verify,
-
                 use_container_width=True,
-
                 height=650,
-
             )
 
         else:
 
             st.success(
-                "Workbook matches calculations."
+                "Workbook matches calculation engine."
             )
+
 
 # ----------------------------------------------------------
 # Raw Data
@@ -470,35 +425,24 @@ elif page == "Verification":
 
 elif page == "Raw Data":
 
-    st.subheader(
-        "Historical Market Data"
-    )
+    st.subheader("Historical Data")
 
     st.dataframe(
-
         state.history,
-
         use_container_width=True,
-
-        height=350,
-
+        height=300,
     )
 
     st.divider()
 
-    st.subheader(
-        "Calculated Worksheet"
-    )
+    st.subheader("Calculated Taylor Worksheet")
 
     st.dataframe(
-
         state.calculations,
-
         use_container_width=True,
-
-        height=500,
-
+        height=650,
     )
+
 
 # ----------------------------------------------------------
 # Help
@@ -508,14 +452,16 @@ elif page == "Help":
 
     HelpPanel.render()
 
+
 # ----------------------------------------------------------
 # Footer
 # ----------------------------------------------------------
 
 Footer.render()
 
+
 # ----------------------------------------------------------
-# Auto Refresh Timer
+# Auto Refresh
 # ----------------------------------------------------------
 
 if st.session_state.auto_refresh:
