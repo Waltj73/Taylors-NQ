@@ -1,96 +1,146 @@
 # engine/taylor_engine.py
 
+"""
+Taylor Engine
+
+This is the ONE engine the rest of the application should call.
+
+Once complete, no UI component should know anything about:
+    - Yahoo Finance
+    - Excel
+    - Workbook parsing
+    - Formula execution
+
+Everything comes through TaylorEngine.
+
+Pipeline
+
+Yahoo Finance
+      │
+      ▼
+Worksheet Builder
+      │
+      ▼
+Workbook Pipeline
+      │
+      ▼
+Workbook Validation
+      │
+      ▼
+Trading Plan
+      │
+      ▼
+Dashboard
+"""
+
 from __future__ import annotations
+
+from dataclasses import dataclass
 
 import pandas as pd
 
-from engine.calculations import calculate
-from engine.models import TaylorLevels
+from config import config
+from .data import YahooData
+from .trading_plan import TradingPlanBuilder
+from .workbook import TaylorWorkbook
+from .workbook_pipeline import WorkbookPipeline
+
+
+@dataclass(slots=True)
+class TaylorEngineResult:
+
+    history: pd.DataFrame
+
+    worksheet: pd.DataFrame
+
+    workbook: pd.DataFrame | None
+
+    verification: list | None
+
+    trading_plan: object | None
 
 
 class TaylorEngine:
-    """
-    Taylor Trading Engine
 
-    Input:
-        DataFrame containing
+    def __init__(self):
 
-        Date
-        Open
-        High
-        Low
-        Close
-
-    Output:
-        DataFrame with every Taylor calculation
-    """
-
-    def __init__(self, dataframe: pd.DataFrame):
-
-        if dataframe is None:
-            raise ValueError("No dataframe supplied.")
-
-        if dataframe.empty:
-            raise ValueError("Dataframe is empty.")
-
-        self.df = dataframe.copy()
-
-    # ----------------------------------------------------
-    # Calculate every row
-    # ----------------------------------------------------
-
-    def calculate_all(self) -> pd.DataFrame:
-
-        return calculate(self.df)
-
-    # ----------------------------------------------------
-    # Latest trading day only
-    # ----------------------------------------------------
-
-    def latest(self) -> TaylorLevels:
-
-        df = calculate(self.df)
-
-        row = df.iloc[-1]
-
-        return TaylorLevels(
-
-            date=str(row["Date"]),
-
-            open=float(row["Open"]),
-            high=float(row["High"]),
-            low=float(row["Low"]),
-            close=float(row["Close"]),
-
-            projected_high_1=float(row["Projected_High_1"]),
-            projected_high_2=float(row["Projected_High_2"]),
-
-            projected_low_1=float(row["Projected_Low_1"]),
-            projected_low_2=float(row["Projected_Low_2"]),
-
-            average_sell=float(row["Average_Sell"]),
-            average_buy=float(row["Average_Buy"]),
-
-            breakout_buy=float(row["Breakout_Buy"]),
-            breakout_sell=float(row["Breakout_Sell"]),
-
-            pivot=float(row["Pivot"]),
+        self.market = YahooData(
+            config.SYMBOL
         )
 
-    # ----------------------------------------------------
-    # Latest dataframe row
-    # ----------------------------------------------------
+        self.pipeline = WorkbookPipeline(
+            config.EXCEL_WORKBOOK,
+            sheet="NQ",
+        )
 
-    def latest_row(self) -> pd.Series:
+        self.plan = TradingPlanBuilder()
 
-        df = calculate(self.df)
+    def refresh(self) -> TaylorEngineResult:
 
-        return df.iloc[-1]
+        #
+        # Download latest market history.
+        #
 
-    # ----------------------------------------------------
-    # Entire calculation history
-    # ----------------------------------------------------
+        history = self.market.latest(
+            bars=250,
+            interval=config.HISTORY_INTERVAL,
+        )
 
-    def history(self) -> pd.DataFrame:
+        #
+        # Build workbook-equivalent worksheet.
+        #
 
-        return calculate(self.df)
+        worksheet = self.pipeline.run(
+            history
+        )
+
+        #
+        # Optional verification against workbook.
+        #
+
+        workbook = None
+        verification = None
+
+        try:
+
+            workbook = TaylorWorkbook(
+                config.EXCEL_WORKBOOK
+            ).first_sheet()
+
+            verification = (
+                self.pipeline.verify(
+                    workbook,
+                    worksheet,
+                )
+            )
+
+        except Exception:
+
+            workbook = None
+            verification = None
+
+        #
+        # Trading plan.
+        #
+
+        trading_plan = None
+
+        try:
+
+            trading_plan = (
+                self.plan.build(
+                    worksheet
+                )
+            )
+
+        except Exception:
+
+            trading_plan = None
+
+        return TaylorEngineResult(
+            history=history,
+            worksheet=worksheet,
+            workbook=workbook,
+            verification=verification,
+            trading_plan=trading_plan,
+        )
