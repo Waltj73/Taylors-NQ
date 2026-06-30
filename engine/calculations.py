@@ -6,7 +6,7 @@ import numpy as np
 
 
 # =========================================================
-# OUTPUT STRUCTURE (APP SAFE)
+# OUTPUT CONTRACT (DO NOT CHANGE - MATCHES app.py)
 # =========================================================
 
 @dataclass
@@ -19,10 +19,12 @@ class TaylorLevels:
     BuyingLow: float = 0.0
     Decline: float = 0.0
     Rally: float = 0.0
+    TomorrowAnticipatedHighFromLow: float = 0.0
+    TomorrowAnticipatedHighFromHigh: float = 0.0
 
 
 # =========================================================
-# TAYLOR BOOK METHOD ENGINE
+# ENGINE
 # =========================================================
 
 class TaylorCalculator:
@@ -36,23 +38,16 @@ class TaylorCalculator:
         if any(c not in df.columns for c in required):
             raise ValueError("Missing OHLC columns")
 
-        # ensure columns exist
-        cols = [
-            "Rally", "Decline", "BuyingHigh", "BuyingLow",
-            "Rally3Avg", "Decline3Avg", "BuyHigh3Avg", "BuyLow3Avg",
-            "Pivot", "PivotBreakoutHigh", "PivotBreakoutLow",
-            "AverageBuy", "AverageSell"
-        ]
-
-        for c in cols:
-            if c not in df.columns:
-                df[c] = 0.0
+        # ensure ALL expected columns exist
+        for col in TaylorLevels.__annotations__.keys():
+            if col not in df.columns:
+                df[col] = 0.0
 
         if len(df) < 2:
             return df
 
         # =====================================================
-        # CORE CALCULATIONS
+        # MAIN LOOP (Taylor cycle math)
         # =====================================================
 
         for i in range(1, len(df)):
@@ -68,62 +63,41 @@ class TaylorCalculator:
             prevL = df.at[p, "Low"]
 
             # -------------------------------------------------
-            # CORE TAYLOR DEFINITIONS (FROM YOUR SLIDES)
+            # CORE TAYLOR DEFINITIONS (FROM YOUR VIDEO)
             # -------------------------------------------------
 
-            rally = H - prevL
-            decline = prevH - L
-            buying_high = H - prevH
-            buying_low = prevL - L
-
-            df.at[r, "Rally"] = rally
-            df.at[r, "Decline"] = decline
-            df.at[r, "BuyingHigh"] = buying_high
-            df.at[r, "BuyingLow"] = buying_low
+            df.at[r, "Rally"] = H - prevL
+            df.at[r, "Decline"] = prevH - L
+            df.at[r, "BuyingHigh"] = H - prevH
+            df.at[r, "BuyingLow"] = prevL - L
 
             # -------------------------------------------------
-            # 3-DAY AVERAGES (ENVELOPE COMPONENTS)
-            # -------------------------------------------------
-
-            def avg(col):
-                vals = []
-                for j in range(max(0, i-2), i+1):
-                    vals.append(df.at[df.index[j], col])
-                return sum(vals) / len(vals)
-
-            df.at[r, "Rally3Avg"] = avg("Rally")
-            df.at[r, "Decline3Avg"] = avg("Decline")
-            df.at[r, "BuyHigh3Avg"] = avg("BuyingHigh")
-            df.at[r, "BuyLow3Avg"] = avg("BuyingLow")
-
-            # -------------------------------------------------
-            # PIVOT (TAYLOR STANDARD)
+            # PIVOT (STANDARD TAYLOR STYLE)
             # -------------------------------------------------
 
             pivot = (H + L + C) / 3
-            df.at[r, "Pivot"] = pivot
 
-            df.at[r, "PivotBreakoutHigh"] = (2 * pivot) - H
-            df.at[r, "PivotBreakoutLow"] = (2 * pivot) - L
+            df.at[r, "TomorrowBreakoutHigh"] = (2 * pivot) - L
+            df.at[r, "TomorrowBreakoutLow"] = (2 * pivot) - H
 
             # -------------------------------------------------
-            # ENVELOPES (FROM SLIDES LOGIC)
+            # ENVELOPE (STABLE SIMPLE VERSION)
             # -------------------------------------------------
 
-            # Sell envelope uses rally + buying high pressure
-            sell_pressure = df.at[r, "Rally3Avg"] + df.at[r, "BuyHigh3Avg"]
+            df.at[r, "AverageBuy"] = (df.at[r, "TomorrowBreakoutLow"] + L) / 2
+            df.at[r, "AverageSell"] = (df.at[r, "TomorrowBreakoutHigh"] + H) / 2
 
-            df.at[r, "AverageSell"] = H + (sell_pressure / 2)
+            # -------------------------------------------------
+            # ANTICIPATION LAYERS (APP REQUIREMENT)
+            # -------------------------------------------------
 
-            # Buy envelope uses decline + buying low pressure
-            buy_pressure = df.at[r, "Decline3Avg"] + df.at[r, "BuyLow3Avg"]
-
-            df.at[r, "AverageBuy"] = L - (buy_pressure / 2)
+            df.at[r, "TomorrowAnticipatedHighFromLow"] = L + df.at[r, "Rally"]
+            df.at[r, "TomorrowAnticipatedHighFromHigh"] = H + df.at[r, "BuyingHigh"]
 
         return df
 
     # =========================================================
-    # SAFE OUTPUT FOR APP
+    # SAFE OUTPUT (NO KEYERRORS EVER)
     # =========================================================
 
     def latest(self, df: pd.DataFrame) -> TaylorLevels:
@@ -134,10 +108,12 @@ class TaylorCalculator:
         return TaylorLevels(
             AverageBuy=float(r["AverageBuy"]),
             AverageSell=float(r["AverageSell"]),
-            TomorrowBreakoutHigh=float(r["PivotBreakoutHigh"]),
-            TomorrowBreakoutLow=float(r["PivotBreakoutLow"]),
+            TomorrowBreakoutHigh=float(r["TomorrowBreakoutHigh"]),
+            TomorrowBreakoutLow=float(r["TomorrowBreakoutLow"]),
             BuyingHigh=float(r["BuyingHigh"]),
             BuyingLow=float(r["BuyingLow"]),
             Decline=float(r["Decline"]),
             Rally=float(r["Rally"]),
+            TomorrowAnticipatedHighFromLow=float(r["TomorrowAnticipatedHighFromLow"]),
+            TomorrowAnticipatedHighFromHigh=float(r["TomorrowAnticipatedHighFromHigh"]),
         )
