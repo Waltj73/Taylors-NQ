@@ -256,13 +256,23 @@ if page == "Dashboard":
             hide_index=True,
         )
 
-    with c2:
+       with c2:
 
         st.subheader("Price History")
 
         st.line_chart(
             state.history["Close"]
         )
+
+    st.divider()
+
+    st.subheader("Latest Calculation")
+
+    st.dataframe(
+        latest.to_frame().T,
+        use_container_width=True,
+        hide_index=True,
+    )
         # ----------------------------------------------------------
 # Trading Plan
 # ----------------------------------------------------------
