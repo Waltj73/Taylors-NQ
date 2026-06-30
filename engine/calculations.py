@@ -1,28 +1,7 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 import pandas as pd
 
-
-# =========================================================
-# OUTPUT
-# =========================================================
-
-@dataclass
-class TaylorLevels:
-    AverageBuy: float
-    AverageSell: float
-    BreakoutHigh: float
-    BreakoutLow: float
-    Rally: float
-    Decline: float
-    BuyingHigh: float
-    BuyingUnder: float
-
-
-# =========================================================
-# ENGINE
-# =========================================================
 
 class TaylorCalculator:
 
@@ -32,14 +11,15 @@ class TaylorCalculator:
 
         required = ["Open", "High", "Low", "Close"]
         if any(c not in df.columns for c in required):
-            raise ValueError("Missing OHLC")
+            raise ValueError("Missing OHLC columns")
 
         # -----------------------------
-        # CORE DAILY METRICS
+        # CORE SCREENSHOT LOGIC
         # -----------------------------
 
         df["Rally"] = df["High"] - df["Low"].shift(1)
         df["Decline"] = df["High"].shift(1) - df["Low"]
+
         df["BuyingHigh"] = df["High"] - df["High"].shift(1)
         df["BuyingUnder"] = df["Low"].shift(1) - df["Low"]
 
@@ -56,13 +36,13 @@ class TaylorCalculator:
         # PIVOT STRUCTURE
         # -----------------------------
 
-        X = (df["High"] + df["Low"] + df["Close"]) / 3
+        pivot = (df["High"] + df["Low"] + df["Close"]) / 3
 
-        df["BreakoutHigh"] = (2 * X) - df["Low"]
-        df["BreakoutLow"] = (2 * X) - df["High"]
+        df["TomorrowBreakoutHigh"] = (2 * pivot) - df["Low"]
+        df["TomorrowBreakoutLow"] = (2 * pivot) - df["High"]
 
         # -----------------------------
-        # ENVELOPE LOGIC
+        # ENVELOPES
         # -----------------------------
 
         df["AverageSell"] = df["High"] + (df["RallyAvg"] + df["BuyingHighAvg"]) / 2
@@ -70,22 +50,27 @@ class TaylorCalculator:
 
         return df
 
-    # =========================================================
-    # OUTPUT
-    # =========================================================
+    # =====================================================
+    # APP OUTPUT (KEY FIX HERE)
+    # =====================================================
 
-    def latest(self, df: pd.DataFrame) -> TaylorLevels:
+    def latest(self, df: pd.DataFrame):
 
         d = self.calculate(df)
         r = d.iloc[-1]
 
-        return TaylorLevels(
-            AverageBuy=float(r["AverageBuy"]),
-            AverageSell=float(r["AverageSell"]),
-            BreakoutHigh=float(r["BreakoutHigh"]),
-            BreakoutLow=float(r["BreakoutLow"]),
-            Rally=float(r["Rally"]),
-            Decline=float(r["Decline"]),
-            BuyingHigh=float(r["BuyingHigh"]),
-            BuyingUnder=float(r["BuyingUnder"]),
-        )
+        return {
+            "AverageBuy": float(r["AverageBuy"]),
+            "AverageSell": float(r["AverageSell"]),
+
+            "TomorrowBreakoutHigh": float(r["TomorrowBreakoutHigh"]),
+            "TomorrowBreakoutLow": float(r["TomorrowBreakoutLow"]),
+
+            "BuyingHigh": float(r["BuyingHigh"]),
+
+            # 🔴 FIX: app expects BuyingLow, not BuyingUnder
+            "BuyingLow": float(r["BuyingUnder"]),
+
+            "Decline": float(r["Decline"]),
+            "Rally": float(r["Rally"]),
+        }
